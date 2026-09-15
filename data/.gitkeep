@@ -1,0 +1,2 @@
+Generated SQLite databases live here. Nothing in this directory is committed
+(see .gitignore); the seed generator recreates it from SEED_RANDOM_SEED.

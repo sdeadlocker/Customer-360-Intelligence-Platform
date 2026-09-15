@@ -1,0 +1,37 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PullImagesFromEcr",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:GetAuthorizationToken",
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:BatchGetImage"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "WriteContainerLogs",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": "arn:aws:logs:${region}:${account_id}:log-group:/ecs/c360-*:*"
+    },
+    {
+      "Sid": "InjectSecretsIntoTaskDefinition",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:GetSecretValue"
+      ],
+      "Resource": [
+        "arn:aws:secretsmanager:${region}:${account_id}:secret:c360/jwt-private-key-*",
+        "arn:aws:secretsmanager:${region}:${account_id}:secret:c360/telemetry-hash-salt-*",
+        "arn:aws:secretsmanager:${region}:${account_id}:secret:c360/oidc-*"
+      ]
+    }
+  ]
+}

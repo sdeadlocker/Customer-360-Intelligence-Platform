@@ -1,0 +1,41 @@
+# Keep the Docker build context small and hermetic. The api image seeds its own databases and
+# installs deps from the lockfile, so none of the local build/venv/data artifacts should be sent.
+
+# Python
+backend/.venv/
+**/__pycache__/
+**/*.pyc
+backend/.mypy_cache/
+backend/.ruff_cache/
+backend/.pytest_cache/
+backend/.coverage
+backend/coverage.xml
+backend/htmlcov/
+
+# Local databases are rebuilt inside the image (path A); never ship the host copies.
+backend/data/
+data/
+
+# Node / frontend build artifacts (the web image runs npm ci + build itself)
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+
+# Secrets and local env — never bake credentials into an image
+.env
+backend/.env
+secrets/
+**/*.pem
+
+# VCS / editor / OS
+.git/
+.gitignore
+.kiro/
+**/.DS_Store
+*.log
+backend/t.log
+backend/_o.txt
+backend/dep.txt
+
+# Docker's own files don't need to be in the context
+docker/grafana/

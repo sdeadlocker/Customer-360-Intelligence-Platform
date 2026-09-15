@@ -1,0 +1,61 @@
+# nginx config for the Customer 360 SPA (rendered by envsubst at container start).
+#
+# Serves the static Vite build and reverse-proxies the API paths to ${API_UPSTREAM}, the production
+# equivalent of the Vite dev proxy in frontend/vite.config.ts. The proxied prefixes mirror the
+# routers mounted in backend/src/c360/main.py. SSE endpoints must not be buffered, so the AI streams
+# (/insights, /recommendations, /ask) render progressively.
+
+map $http_upgrade $connection_upgrade {
+  default upgrade;
+  ''      close;
+}
+
+upstream c360_api {
+  server ${API_UPSTREAM_HOST}:${API_UPSTREAM_PORT};
+}
+
+server {
+  listen ${NGINX_PORT};
+  server_name _;
+
+  root /usr/share/nginx/html;
+  index index.html;
+
+  # Reasonable defaults for a proxied API.
+  proxy_http_version 1.1;
+  proxy_set_header Host $host;
+  proxy_set_header X-Real-IP $remote_addr;
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Forwarded-Proto $scheme;
+  proxy_set_header Connection "";
+
+  # ---- API reverse proxy (same-origin, mirrors main.py routers) ----
+  location ~ ^/(auth|me|customers|knowledge|admin|ask|health|ready)(/|$) {
+    proxy_pass http://c360_api;
+    # SSE / streaming: turn off buffering so token frames flush immediately. Harmless for JSON too.
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_read_timeout 120s;
+    proxy_set_header X-Accel-Buffering no;
+  }
+
+  # RUM (task 10.5) posts OTLP/HTTP metrics; proxy to the API host, which fronts the collector in
+  # deployment. If a separate collector endpoint is used, repoint this location there.
+  location /v1/metrics {
+    proxy_pass http://c360_api;
+    proxy_buffering off;
+  }
+
+  # ---- static SPA with client-side routing fallback ----
+  location / {
+    try_files $uri $uri/ /index.html;
+  }
+
+  # Long-cache the hashed assets Vite emits; never cache index.html.
+  location /assets/ {
+    add_header Cache-Control "public, max-age=31536000, immutable";
+  }
+  location = /index.html {
+    add_header Cache-Control "no-cache";
+  }
+}

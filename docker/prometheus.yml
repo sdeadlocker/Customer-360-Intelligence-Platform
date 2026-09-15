@@ -1,0 +1,16 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+# Alerting and SLO rules, provisioned as code (tasks 10.4, 10.6). Loaded on bring-up so the
+# immediate-page conditions and the error-budget burn alerts exist on a fresh stack, not as a
+# manual post-deploy step.
+rule_files:
+  - /etc/prometheus/alerts/security.yml
+  - /etc/prometheus/alerts/slo.yml
+
+scrape_configs:
+  # The collector re-exposes the API's OTLP metrics on :8889 in Prometheus format.
+  - job_name: c360-otel-collector
+    static_configs:
+      - targets: ['otel-collector:8889']

@@ -1,0 +1,75 @@
+# The application stack (Phase 17, deployment path A — file-backed SQLite).
+#
+# Distinct from docker-compose.yml (the observability stack). This builds and runs the app itself:
+# the API (with the seeded read-only databases baked into its image and a writable volume for the
+# audit and checkpoint databases) and the web SPA served by nginx, reverse-proxying the API paths.
+#
+#   docker compose -f docker/docker-compose.app.yml up --build
+#   # web:  http://localhost:8080     api (direct): http://localhost:8000
+#
+# LLM: defaults to mock so the stack runs with no AWS account. To use real Bedrock, set the four
+# BEDROCK_* / LLM_PROVIDER values in a .env beside this file (or the shell) and provide AWS
+# credentials to the api service (mounted ~/.aws, an env-var trio, or a task role on AWS).
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+      args:
+        SEED_CUSTOMER_COUNT: '100'
+        SEED_RANDOM_SEED: '42'
+        # Bake the knowledge index with mock embeddings by default (offline, hermetic). To bake it
+        # with real Titan embeddings, set EMBED_PROVIDER=bedrock and pass AWS creds as a build secret.
+        EMBED_PROVIDER: 'mock'
+        EMBED_DIMENSIONS: '1024'
+    image: c360-api:local
+    container_name: c360-api
+    environment:
+      ENVIRONMENT: local
+      # --- LLM provider: flip to bedrock + set model/region to use real answers ---
+      LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      BEDROCK_MODEL_ID: ${BEDROCK_MODEL_ID:-}
+      BEDROCK_EMBED_MODEL_ID: ${BEDROCK_EMBED_MODEL_ID:-amazon.titan-embed-text-v2:0}
+      BEDROCK_EMBED_DIMENSIONS: ${BEDROCK_EMBED_DIMENSIONS:-1024}
+      # AWS credentials for the api come from the default chain. Locally, the simplest path is the
+      # env trio below (uncomment / set in a .env); on AWS this is a task role and none of these are set.
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+      # JWT signing key: left unset, so the app generates an ephemeral in-process RSA keypair
+      # (correct for local/demo — tokens simply don't survive a restart). For a real deployment set
+      # JWT_PRIVATE_KEY_PATH to a mounted PEM, or switch AUTH_PROVIDER=oidc to an enterprise IdP.
+      JWT_PRIVATE_KEY_PATH: ${JWT_PRIVATE_KEY_PATH:-}
+      # Telemetry is optional locally; point at the observability stack's collector when running it.
+      OTEL_ENABLED: ${OTEL_ENABLED:-false}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+    volumes:
+      # Writable data plane (audit + checkpoints) survives a container replace.
+      - c360-data:/data
+    ports:
+      - '8000:8000'
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.web
+      args:
+        API_UPSTREAM_HOST: api
+        API_UPSTREAM_PORT: '8000'
+    image: c360-web:local
+    container_name: c360-web
+    environment:
+      API_UPSTREAM_HOST: api
+      API_UPSTREAM_PORT: '8000'
+      NGINX_PORT: '8080'
+    ports:
+      - '8080:8080'
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  c360-data:

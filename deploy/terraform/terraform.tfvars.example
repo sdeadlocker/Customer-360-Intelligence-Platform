@@ -1,0 +1,29 @@
+# Copy to terraform.tfvars and adjust. Do NOT commit terraform.tfvars if it holds anything sensitive
+# (this file holds none — secrets live in Secrets Manager, credentials in the default chain).
+
+region      = "us-east-1"
+environment = "prod"
+name_prefix = "c360"
+
+# Public endpoint. Leave domain_name empty for an HTTP-only ALB (dev). For HTTPS, set the FQDN and
+# either let Terraform create the ACM cert (complete DNS validation using the output records) or pass
+# an existing acm_certificate_arn.
+domain_name         = ""
+acm_certificate_arn = ""
+
+# Image tags — set by deploy/scripts/build-and-push (git short SHA). "latest" only for a first bring-up.
+api_image_tag = "latest"
+web_image_tag = "latest"
+
+# ---- Bedrock: live LLM for agents (generation) and RAG (embeddings) ----
+llm_provider             = "bedrock"
+bedrock_model_id         = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+bedrock_embed_model_id   = "amazon.titan-embed-text-v2:0"
+bedrock_embed_dimensions = 1024
+# bedrock_guardrail_id   = "abc123def456"   # optional
+
+# Path A: single api writer (audit DB). Scale the web tier only.
+api_desired_count = 1
+web_desired_count = 2
+
+otel_enabled = true

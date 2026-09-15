@@ -1,0 +1,121 @@
+{
+  "uid": "c360-data-security",
+  "title": "C360 — Data and security",
+  "tags": ["c360", "phase-10"],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Denied access by role",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "c360-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(c360_security_denied_access_total[5m])) by (role)",
+          "legendFormat": "{{role}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Masking applied by field group",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "c360-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(c360_security_masking_applied_total[5m])) by (field_group)",
+          "legendFormat": "{{field_group}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Audit write-queue depth",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "c360-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 1000 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "c360_audit_queue_depth",
+          "legendFormat": "queue depth"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Audit fail-closed events",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "c360-prometheus" },
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 8 },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "increase(c360_audit_fail_closed_total[1h])",
+          "legendFormat": "fail-closed (1h)"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Circuit-breaker openings",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "c360-prometheus" },
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 8 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(c360_security_breaker_transition_total{state=\"open\"}[5m])) by (breaker)",
+          "legendFormat": "{{breaker}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Audit records written",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "c360-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(c360_audit_records_written_total[5m]))",
+          "legendFormat": "records/s"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "$comment": [
+    "Token prices for cost attribution (design §18, COST_PRICE_TABLE_PATH).",
+    "Prices are integer micro-USD per 1,000 tokens. Micro-USD is used rather than cents because a",
+    "single 1k-token call costs a fraction of a cent, and the platform rule is that money is never",
+    "a float: rounding to cents happens once, at the API boundary, after aggregation.",
+    "Values below are placeholders. Update from the AWS Bedrock pricing page per region."
+  ],
+  "currency": "USD",
+  "unit": "micro_usd_per_1k_tokens",
+  "updated": "2026-09-12",
+  "models": {
+    "anthropic.claude-3-5-sonnet-20241022-v2:0": {
+      "input": 3000,
+      "output": 15000
+    },
+    "anthropic.claude-3-5-haiku-20241022-v1:0": {
+      "input": 800,
+      "output": 4000
+    },
+    "amazon.titan-embed-text-v2:0": {
+      "input": 20,
+      "output": 0
+    },
+    "mock-model": {
+      "input": 0,
+      "output": 0
+    }
+  }
+}

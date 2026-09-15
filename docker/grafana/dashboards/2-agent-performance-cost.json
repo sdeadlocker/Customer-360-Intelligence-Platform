@@ -1,0 +1,126 @@
+{
+  "uid": "c360-agent-perf-cost",
+  "title": "C360 — Agent performance and cost",
+  "tags": ["c360", "phase-10"],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Agent latency p95 by agent",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "c360-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 5000 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum(rate(c360_agent_duration_milliseconds_bucket[5m])) by (le, agent))",
+          "legendFormat": "{{agent}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Agent outcome mix",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "c360-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(c360_agent_outcome_total[5m])) by (outcome)",
+          "legendFormat": "{{outcome}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Model token usage (input/output)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "c360-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(gen_ai_client_token_usage_total[5m])) by (outcome, model)",
+          "legendFormat": "{{model}} {{outcome}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Estimated spend (USD/hour)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "c360-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(c360_model_estimated_cost_micro_usd_total[5m])) by (model) * 3600 / 1e6",
+          "legendFormat": "{{model}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Claim-validator rejections",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "c360-prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(c360_agent_claim_rejections_total[5m])) by (agent)",
+          "legendFormat": "{{agent}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Degradation rate",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "c360-prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(c360_agent_outcome_total{outcome=\"degraded\"}[5m])) / clamp_min(sum(rate(c360_agent_outcome_total[5m])), 1)",
+          "legendFormat": "degraded"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Model throttling",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "c360-prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 16 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(c360_model_throttled_total[5m])) by (model)",
+          "legendFormat": "{{model}}"
+        }
+      ]
+    }
+  ]
+}

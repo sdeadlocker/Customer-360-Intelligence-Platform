@@ -1,0 +1,3135 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Customer 360 Intelligence Platform",
+    "description": "\nCustomer 360 Intelligence Platform API.\n\nDeterministic customer data, agent-generated insights and grounded natural-language Q&A over a\nread-only banking dataset. Monetary values are integer cents internally and decimal strings at this\nboundary; every response carries a correlation ID and trace ID in `meta`.\n",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "operations"
+        ],
+        "summary": "Liveness probe",
+        "description": "Return 200 while the process is alive. Touches no dependency.",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_HealthPayload_"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "tags": [
+          "operations"
+        ],
+        "summary": "Readiness probe",
+        "description": "Report readiness of every registered subsystem, failing closed on any blocking check.",
+        "operationId": "ready_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_ReadyPayload_"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "One or more components are not ready"
+          }
+        }
+      }
+    },
+    "/auth/token": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Password grant: exchange seeded credentials for a token pair",
+        "description": "Authenticate a seeded user and issue an access/refresh token pair.",
+        "operationId": "issue_token_auth_token_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_TokenPayload_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid username or password"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Refresh grant: exchange a refresh token for a fresh token pair",
+        "description": "Exchange a valid refresh token for a fresh access/refresh pair.",
+        "operationId": "refresh_token_auth_refresh_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_TokenPayload_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or expired refresh token"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/recompute": {
+      "post": {
+        "tags": [
+          "operations"
+        ],
+        "summary": "Rebuild derived values, the search index and the graph projection",
+        "description": "Rebuild all derived state (design \u00a714.6). Idempotent and non-destructive to source data.",
+        "operationId": "admin_recompute_admin_recompute_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_RecomputePayload_"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "A projection failed a referential-integrity check"
+          },
+          "503": {
+            "description": "The customer database is not available"
+          }
+        }
+      }
+    },
+    "/admin/detect-signals": {
+      "post": {
+        "tags": [
+          "operations"
+        ],
+        "summary": "Detect proactive signals and rebuild the worklist store (Phase 17)",
+        "description": "Run signal detection over the read-only customer database (task 17.4).\n\nAdmin-only by design, following the same authorization story as ``/admin/recompute``: role-based\nadmin guarding is added when the platform gains an admin role; until then the endpoint is\nnon-destructive to source data \u2014 it only reads the read-only customer database and writes the\nseparate, reconstructible ``signals.db``. Idempotent via ``dedup_key``, so it is safe to\nschedule and safe to re-run.",
+        "operationId": "admin_detect_signals_admin_detect_signals_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_DetectSignalsPayload_"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The customer database is not available"
+          }
+        }
+      }
+    },
+    "/admin/run-reports": {
+      "post": {
+        "tags": [
+          "operations"
+        ],
+        "summary": "Run every due report schedule and deliver via the configured deliverer (Phase 18)",
+        "description": "Run all due report schedules (task 18.4).\n\nAdmin-only by design, following the same authorization story as ``/admin/recompute`` and\n``/admin/detect-signals``. Each due schedule's owner is re-resolved to their *live* principal at\ngeneration time (never the stored snapshot), so a revoked book stops receiving data. Non-\ndestructive to source data: it only reads the read-only customer database and writes the\nseparate ``reports.db`` and the artifact volume.",
+        "operationId": "admin_run_reports_admin_run_reports_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_RunReportsPayload_"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The customer or report database is not available"
+          }
+        }
+      }
+    },
+    "/me": {
+      "get": {
+        "tags": [
+          "identity"
+        ],
+        "summary": "The caller's identity",
+        "operationId": "get_me_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_MeResponse_"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/customers": {
+      "get": {
+        "tags": [
+          "customers"
+        ],
+        "summary": "Search customers (entitlement-scoped, cursor-paginated)",
+        "description": "FTS search over the customer index, scoped to the principal's book (requirements 3.1,\n3.3).",
+        "operationId": "search_customers_customers_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200,
+              "default": "",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 25,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_Page_CustomerSearchHit__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/customers/{customer_id}": {
+      "get": {
+        "tags": [
+          "customers"
+        ],
+        "summary": "Customer profile and contact",
+        "operationId": "get_customer_customers__customer_id__get",
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Customer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_dict_str__Any__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/customers/{customer_id}/accounts": {
+      "get": {
+        "tags": [
+          "customers"
+        ],
+        "summary": "All holdings (optionally filtered by account type)",
+        "operationId": "get_accounts_customers__customer_id__accounts_get",
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Customer Id"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Type"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_dict_str__Any__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/customers/{customer_id}/loans": {
+      "get": {
+        "tags": [
+          "customers"
+        ],
+        "summary": "Loan holdings",
+        "operationId": "get_loans_customers__customer_id__loans_get",
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Customer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_dict_str__Any__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/customers/{customer_id}/deposits": {
+      "get": {
+        "tags": [
+          "customers"
+        ],
+        "summary": "Deposit holdings",
+        "operationId": "get_deposits_customers__customer_id__deposits_get",
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Customer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_dict_str__Any__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/customers/{customer_id}/investments": {
+      "get": {
+        "tags": [
+          "customers"
+        ],
+        "summary": "Investment holdings and allocation",
+        "operationId": "get_investments_customers__customer_id__investments_get",
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Customer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_dict_str__Any__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/customers/{customer_id}/transactions": {
+      "get": {
+        "tags": [
+          "customers"
+        ],
+        "summary": "Transactions with expense analytics",
+        "operationId": "get_transactions_customers__customer_id__transactions_get",
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Customer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_dict_str__Any__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/customers/{customer_id}/credit": {
+      "get": {
+        "tags": [
+          "customers"
+        ],
+        "summary": "Credit profile (FICO, behaviour, utilization), masked per role",
+        "operationId": "get_credit_customers__customer_id__credit_get",
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Customer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_dict_str__Any__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/customers/{customer_id}/risk": {
+      "get": {
+        "tags": [
+          "customers"
+        ],
+        "summary": "Risk profile, band, exposure and alerts",
+        "operationId": "get_risk_customers__customer_id__risk_get",
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Customer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_dict_str__Any__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/customers/{customer_id}/relationships": {
+      "get": {
+        "tags": [
+          "customers"
+        ],
+        "summary": "Relationships",
+        "operationId": "get_relationships_customers__customer_id__relationships_get",
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Customer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_dict_str__Any__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/customers/{customer_id}/household": {
+      "get": {
+        "tags": [
+          "customers"
+        ],
+        "summary": "Household and rollups",
+        "operationId": "get_household_customers__customer_id__household_get",
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Customer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_dict_str__Any__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/customers/{customer_id}/offers": {
+      "get": {
+        "tags": [
+          "customers"
+        ],
+        "summary": "Ranked offers with suppression reasons and campaigns",
+        "operationId": "get_offers_customers__customer_id__offers_get",
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Customer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_dict_str__Any__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/customers/{customer_id}/journey": {
+      "get": {
+        "tags": [
+          "customers"
+        ],
+        "summary": "Merged customer timeline",
+        "operationId": "get_journey_customers__customer_id__journey_get",
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Customer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_dict_str__Any__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/customers/{customer_id}/engagement": {
+      "get": {
+        "tags": [
+          "customers"
+        ],
+        "summary": "Engagement history, newest first, filterable by channel and event type",
+        "description": "Engagement events across channels (requirement 7.6).\n\nThe optional ``channel`` and ``event_type`` filters are comma-separated lists; an unknown value\nis a client error (422) rather than a silently-ignored filter, matching the ``type`` filter on\nholdings.",
+        "operationId": "get_engagement_customers__customer_id__engagement_get",
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Customer Id"
+            }
+          },
+          {
+            "name": "channel",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Channel"
+            }
+          },
+          {
+            "name": "event_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Event Type"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_dict_str__Any__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/customers/{customer_id}/360": {
+      "get": {
+        "tags": [
+          "customers"
+        ],
+        "summary": "Full deterministic 360 read model (partial-tolerant)",
+        "description": "The composed 360 view. A module that fails is isolated into ``meta.errors[]`` and its slot is\nomitted, so the response is a partial 200 rather than a whole-dashboard failure (requirement\n4.4).",
+        "operationId": "get_360_customers__customer_id__360_get",
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Customer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_dict_str__Any__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/knowledge/search": {
+      "get": {
+        "tags": [
+          "knowledge"
+        ],
+        "summary": "Hybrid knowledge retrieval with citations",
+        "description": "Retrieve passages for ``q``, entitlement-filtered, and audit the documents returned.\n\nReranking is not enabled on this endpoint: it is the search surface, held to the dashboard-agent\nbudget. The Q&A path (Phase 9) enables reranking on its own route.",
+        "operationId": "knowledge_search_knowledge_search_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Retrieval query (no PII).",
+              "title": "Q"
+            },
+            "description": "Retrieval query (no PII)."
+          },
+          {
+            "name": "domain",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/KnowledgeDomain"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Restrict to these domains.",
+              "title": "Domain"
+            },
+            "description": "Restrict to these domains."
+          },
+          {
+            "name": "product_code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Narrow to one product code.",
+              "title": "Product Code"
+            },
+            "description": "Narrow to one product code."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_KnowledgeSearchPayload_"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Audit unavailable (fail-closed)"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/knowledge/documents/{doc_id}": {
+      "get": {
+        "tags": [
+          "knowledge"
+        ],
+        "summary": "Document metadata",
+        "description": "Return document metadata, or 404 if unknown or above the role's entitlement (17.8).\n\nAbsent and forbidden are collapsed into 404, so the endpoint is not an existence oracle for\nrestricted documents \u2014 the same discipline the customer endpoints apply.\n\nDocument metadata is institutional reference data (task 16.2): it changes only on re-ingestion,\nnot per request or per role. The response therefore carries a strong ``ETag`` and a short\n``Cache-Control`` so a repeat read can be a conditional ``304`` rather than a full round trip.",
+        "operationId": "get_document_knowledge_documents__doc_id__get",
+        "parameters": [
+          {
+            "name": "doc_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Doc Id"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A specific version, or latest.",
+              "title": "Version"
+            },
+            "description": "A specific version, or latest."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_DocumentPayload_"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not modified (client's ETag matches)"
+          },
+          "404": {
+            "description": "Unknown document or not entitled"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/customers/{customer_id}/insights": {
+      "get": {
+        "tags": [
+          "insights"
+        ],
+        "summary": "Stream the AI insight cards as server-sent events",
+        "description": "Stream every insight card (all agents except the offer recommendation) over SSE.",
+        "operationId": "stream_insights_customers__customer_id__insights_get",
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Customer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "text/event-stream": {}
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/customers/{customer_id}/recommendations": {
+      "get": {
+        "tags": [
+          "insights"
+        ],
+        "summary": "Stream the AI recommendation card as server-sent events",
+        "description": "Stream the next-best-offer recommendation card over SSE.",
+        "operationId": "stream_recommendations_customers__customer_id__recommendations_get",
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Customer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "text/event-stream": {}
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/customers/{customer_id}/ask": {
+      "post": {
+        "tags": [
+          "ask"
+        ],
+        "summary": "Ask a grounded natural-language question about a customer (SSE)",
+        "description": "Authorize, audit, run the Q&A graph, and stream the grounded answer (task 9.5).",
+        "operationId": "ask_customers__customer_id__ask_post",
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Customer Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AskRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "text/event-stream": {}
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ask": {
+      "post": {
+        "tags": [
+          "ask"
+        ],
+        "summary": "Ask a grounded natural-language question across all entitled customers (SSE)",
+        "description": "Answer a cross-customer question and stream the grounded answer (task 9.6).\n\nThe search-landing \"Ask anything\" entry point. There is no customer to authorize up front, so\nthe agent resolves one with the entitlement-scoped ``customer_search`` tool and every reading\ntool re-authorizes the id it resolves to \u2014 entitlement is enforced per result, not skipped. The\naccess is audited fail-closed before answering, and a refusal (a tool that reached a\nnon-entitled customer) is audited as a denied access, disclosing nothing.",
+        "operationId": "ask_all_ask_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AskRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "text/event-stream": {}
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/signals": {
+      "get": {
+        "tags": [
+          "signals"
+        ],
+        "summary": "The caller's ranked, entitlement-scoped signals worklist",
+        "description": "The prioritized daily worklist across the caller's entitled book (task 17.3, 17.5).\n\nRanked by severity x value-at-stake x recency, suppressing dismissed and cooled-off signals.\nReturns an empty page when signal detection has not run yet.",
+        "operationId": "list_signals_signals_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 25,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Type"
+            }
+          },
+          {
+            "name": "severity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Severity"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_Page_dict_str__Any___"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/customers/{customer_id}/signals": {
+      "get": {
+        "tags": [
+          "signals"
+        ],
+        "summary": "Signals for one customer (drill-down)",
+        "description": "Every signal for one customer, behind the same 403-vs-404 gate as the 360 view (task\n17.5).",
+        "operationId": "list_customer_signals_customers__customer_id__signals_get",
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Customer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_dict_str__Any__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/signals/{signal_id}/dismiss": {
+      "post": {
+        "tags": [
+          "signals"
+        ],
+        "summary": "Dismiss a signal for the calling user",
+        "description": "Suppress a signal from the caller's queue for the cooling-off window (task 17.5).",
+        "operationId": "dismiss_signal_signals__signal_id__dismiss_post",
+        "parameters": [
+          {
+            "name": "signal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Signal Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_DismissResult_"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such signal, or not entitled to its customer"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/signals/{signal_id}/ack": {
+      "post": {
+        "tags": [
+          "signals"
+        ],
+        "summary": "Acknowledge (mark actioned) a signal for the calling user",
+        "description": "Mark a signal actioned for the caller, permanently suppressing it from their queue (task\n17.5).",
+        "operationId": "ack_signal_signals__signal_id__ack_post",
+        "parameters": [
+          {
+            "name": "signal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Signal Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_DismissResult_"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such signal, or not entitled to its customer"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reports": {
+      "post": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Define a report",
+        "description": "Create a report definition owned by the caller (task 18.5).",
+        "operationId": "define_report_reports_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DefineReportBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_DefinitionCreated_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reports/{definition_id}/run": {
+      "post": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Run a report now",
+        "description": "Generate the report now, entitlement re-checked and masked (task 18.2, 18.5).",
+        "operationId": "run_report_reports__definition_id__run_post",
+        "parameters": [
+          {
+            "name": "definition_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Definition Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_RunView_"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such report, or not owned by the caller"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reports/{definition_id}/runs": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "A report's run history",
+        "description": "Every run of a definition the caller owns, newest first (task 18.5).",
+        "operationId": "list_report_runs_reports__definition_id__runs_get",
+        "parameters": [
+          {
+            "name": "definition_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Definition Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_RunList_"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such report, or not owned by the caller"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reports/runs/{run_id}": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Download a run's artifact",
+        "description": "Stream the generated artifact for a run the caller owns (task 18.5).",
+        "operationId": "download_run_reports_runs__run_id__get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "application/pdf": {}
+            }
+          },
+          "404": {
+            "description": "No such run, not owned by the caller, or no artifact"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reports/{definition_id}/schedules": {
+      "post": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Attach a schedule to a report",
+        "description": "Attach a cron-like cadence to a report the caller owns (task 18.4, 18.5).",
+        "operationId": "create_schedule_reports__definition_id__schedules_post",
+        "parameters": [
+          {
+            "name": "definition_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Definition Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScheduleBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_ScheduleCreated_"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such report, or not owned by the caller"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reports/schedules/{schedule_id}": {
+      "delete": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Disable a schedule",
+        "description": "Deactivate a schedule so it stops running (task 18.5).",
+        "operationId": "disable_schedule_reports_schedules__schedule_id__delete",
+        "parameters": [
+          {
+            "name": "schedule_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Schedule Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_dict_str__bool__"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such schedule"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AskRequest": {
+        "properties": {
+          "question": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Question",
+            "description": "The natural-language question."
+          },
+          "session_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Session Id",
+            "description": "Conversation session; memory is keyed by (session_id, customer_id)."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "question",
+          "session_id"
+        ],
+        "title": "AskRequest",
+        "description": "The Q&A request body: a question and the session it belongs to (design \u00a710.2)."
+      },
+      "BrandingBody": {
+        "properties": {
+          "brand_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand Name"
+          },
+          "tagline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tagline"
+          }
+        },
+        "type": "object",
+        "title": "BrandingBody",
+        "description": "Per-definition branding (task 18.1). Falls back to platform defaults when omitted."
+      },
+      "CheckStatus": {
+        "type": "string",
+        "enum": [
+          "pass",
+          "fail",
+          "skipped"
+        ],
+        "title": "CheckStatus",
+        "description": "Outcome of a single readiness check."
+      },
+      "ComponentPayload": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CheckStatus"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "status"
+        ],
+        "title": "ComponentPayload",
+        "description": "One readiness component."
+      },
+      "CustomerSearchHit": {
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "title": "Customer Id"
+          },
+          "customer_name": {
+            "type": "string",
+            "title": "Customer Name"
+          },
+          "customer_segment": {
+            "$ref": "#/components/schemas/CustomerSegment"
+          },
+          "city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "customer_id",
+          "customer_name",
+          "customer_segment"
+        ],
+        "title": "CustomerSearchHit",
+        "description": "One row of an FTS5 ``customer_search`` result (requirement 3.1).\n\nDeliberately thin \u2014 id, name, segment and the city the match came from \u2014 because a search result\nlist is a picker, not a profile. The identifying columns the index searches on (email, phone,\naccount and loan numbers, card last-4) are *not* echoed back: a hit on a card's last four digits\nshould return the customer, not re-display the digits that were typed, and returning them would\nput maskable values on a path the field-masking serializer does not cover. Selecting the profile\nthen goes through :meth:`CustomerService.get_profile`, which is masked."
+      },
+      "CustomerSegment": {
+        "type": "string",
+        "enum": [
+          "MASS",
+          "AFFLUENT",
+          "HNW",
+          "UHNW",
+          "SMALL_BUSINESS"
+        ],
+        "title": "CustomerSegment"
+      },
+      "DefineReportBody": {
+        "properties": {
+          "report_type": {
+            "$ref": "#/components/schemas/ReportType"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/ScopeBody"
+          },
+          "branding": {
+            "$ref": "#/components/schemas/BrandingBody",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "required": [
+          "report_type",
+          "title",
+          "scope"
+        ],
+        "title": "DefineReportBody",
+        "description": "The body of ``POST /reports`` (task 18.5)."
+      },
+      "DefinitionCreated": {
+        "properties": {
+          "definition_id": {
+            "type": "integer",
+            "title": "Definition Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "definition_id"
+        ],
+        "title": "DefinitionCreated"
+      },
+      "DetectSignalsPayload": {
+        "properties": {
+          "run_id": {
+            "type": "integer",
+            "title": "Run Id"
+          },
+          "as_of": {
+            "type": "string",
+            "title": "As Of"
+          },
+          "customers_scanned": {
+            "type": "integer",
+            "title": "Customers Scanned"
+          },
+          "signals_written": {
+            "type": "integer",
+            "title": "Signals Written"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "as_of",
+          "customers_scanned",
+          "signals_written"
+        ],
+        "title": "DetectSignalsPayload",
+        "description": "What a signal-detection run produced (task 17.4)."
+      },
+      "DismissResult": {
+        "properties": {
+          "signal_id": {
+            "type": "integer",
+            "title": "Signal Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "signal_id",
+          "status"
+        ],
+        "title": "DismissResult",
+        "description": "The outcome of a dismiss/ack write."
+      },
+      "DocumentPayload": {
+        "properties": {
+          "doc_id": {
+            "type": "string",
+            "title": "Doc Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "domain": {
+            "$ref": "#/components/schemas/KnowledgeDomain"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "effective_from": {
+            "type": "string",
+            "title": "Effective From"
+          },
+          "effective_to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective To"
+          },
+          "jurisdiction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jurisdiction"
+          },
+          "access_level": {
+            "type": "string",
+            "title": "Access Level"
+          },
+          "product_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Code"
+          },
+          "business_group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Business Group"
+          }
+        },
+        "type": "object",
+        "required": [
+          "doc_id",
+          "title",
+          "domain",
+          "version",
+          "effective_from",
+          "access_level"
+        ],
+        "title": "DocumentPayload",
+        "description": "``GET /knowledge/documents/{doc_id}`` payload: document metadata (design \u00a76.3)."
+      },
+      "EntitlementSummary": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Count"
+          },
+          "segments": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Segments",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "EntitlementSummary",
+        "description": "A non-identifying description of the caller's entitlement scope.\n\n``kind`` is ``ALL`` / ``BOOK`` / ``SEGMENT``; ``count`` is the size of a book or the number of\nsegments (``None`` for ``ALL``). The book's customer ids themselves are not returned \u2014 the\nclient\ndoes not need them and echoing a whole book back on every load would be needless exposure."
+      },
+      "Envelope_DefinitionCreated_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/DefinitionCreated"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "Envelope[DefinitionCreated]"
+      },
+      "Envelope_DetectSignalsPayload_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/DetectSignalsPayload"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "Envelope[DetectSignalsPayload]"
+      },
+      "Envelope_DismissResult_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/DismissResult"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "Envelope[DismissResult]"
+      },
+      "Envelope_DocumentPayload_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/DocumentPayload"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "Envelope[DocumentPayload]"
+      },
+      "Envelope_HealthPayload_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/HealthPayload"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "Envelope[HealthPayload]"
+      },
+      "Envelope_KnowledgeSearchPayload_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/KnowledgeSearchPayload"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "Envelope[KnowledgeSearchPayload]"
+      },
+      "Envelope_MeResponse_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/MeResponse"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "Envelope[MeResponse]"
+      },
+      "Envelope_Page_CustomerSearchHit__": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Page_CustomerSearchHit_"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "Envelope[Page[CustomerSearchHit]]"
+      },
+      "Envelope_Page_dict_str__Any___": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Page_dict_str__Any__"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "Envelope[Page[dict[str, Any]]]"
+      },
+      "Envelope_ReadyPayload_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ReadyPayload"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "Envelope[ReadyPayload]"
+      },
+      "Envelope_RecomputePayload_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RecomputePayload"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "Envelope[RecomputePayload]"
+      },
+      "Envelope_RunList_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RunList"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "Envelope[RunList]"
+      },
+      "Envelope_RunReportsPayload_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RunReportsPayload"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "Envelope[RunReportsPayload]"
+      },
+      "Envelope_RunView_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RunView"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "Envelope[RunView]"
+      },
+      "Envelope_ScheduleCreated_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ScheduleCreated"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "Envelope[ScheduleCreated]"
+      },
+      "Envelope_TokenPayload_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/TokenPayload"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "Envelope[TokenPayload]"
+      },
+      "Envelope_dict_str__Any__": {
+        "properties": {
+          "data": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Data"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "Envelope[dict[str, Any]]"
+      },
+      "Envelope_dict_str__bool__": {
+        "properties": {
+          "data": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object",
+            "title": "Data"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "Envelope[dict[str, bool]]"
+      },
+      "ErrorCode": {
+        "type": "string",
+        "enum": [
+          "UNAUTHENTICATED",
+          "ENTITLEMENT_DENIED",
+          "CUSTOMER_NOT_FOUND",
+          "VALIDATION_ERROR",
+          "AGENT_TIMEOUT",
+          "UPSTREAM_UNAVAILABLE",
+          "RATE_LIMITED",
+          "INTERNAL_ERROR"
+        ],
+        "title": "ErrorCode",
+        "description": "The complete error code set from design \u00a76.3."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthPayload": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "ok",
+            "title": "Status",
+            "default": "ok"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "default": "0.1.0"
+          }
+        },
+        "type": "object",
+        "title": "HealthPayload",
+        "description": "Liveness payload. Deliberately dependency-free."
+      },
+      "KnowledgeDomain": {
+        "type": "string",
+        "enum": [
+          "product_catalog",
+          "policy",
+          "procedure",
+          "offer_terms",
+          "playbook",
+          "compliance"
+        ],
+        "title": "KnowledgeDomain",
+        "description": "The six knowledge domains (design \u00a79.2). Mirrors the ``kb_document.domain`` CHECK set."
+      },
+      "KnowledgePassage": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score"
+          },
+          "doc_id": {
+            "type": "string",
+            "title": "Doc Id"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "section_path": {
+            "type": "string",
+            "title": "Section Path"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "effective_from": {
+            "type": "string",
+            "title": "Effective From"
+          },
+          "effective_to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective To"
+          },
+          "chunk_id": {
+            "type": "string",
+            "title": "Chunk Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text",
+          "score",
+          "doc_id",
+          "version",
+          "section_path",
+          "title",
+          "effective_from",
+          "chunk_id"
+        ],
+        "title": "KnowledgePassage",
+        "description": "One cited passage from the tool: text plus everything needed to cite it (17.5, 17.6)."
+      },
+      "KnowledgeSearchPayload": {
+        "properties": {
+          "passages": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgePassage"
+            },
+            "type": "array",
+            "title": "Passages",
+            "default": []
+          },
+          "candidate_count": {
+            "type": "integer",
+            "title": "Candidate Count",
+            "default": 0
+          },
+          "reranked": {
+            "type": "boolean",
+            "title": "Reranked",
+            "default": false
+          },
+          "no_guidance_found": {
+            "type": "boolean",
+            "title": "No Guidance Found",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "KnowledgeSearchPayload",
+        "description": "``GET /knowledge/search`` payload: cited passages and retrieval counters (17.5, 17.6)."
+      },
+      "MeResponse": {
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "entitlement": {
+            "$ref": "#/components/schemas/EntitlementSummary"
+          },
+          "knowledge_levels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Knowledge Levels",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "role",
+          "entitlement"
+        ],
+        "title": "MeResponse"
+      },
+      "Meta": {
+        "properties": {
+          "correlation_id": {
+            "type": "string",
+            "title": "Correlation Id"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Id"
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date-time",
+            "title": "As Of"
+          },
+          "masked_fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Masked Fields"
+          },
+          "computed_fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Computed Fields"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ModuleError"
+            },
+            "type": "array",
+            "title": "Errors"
+          }
+        },
+        "type": "object",
+        "required": [
+          "correlation_id",
+          "as_of"
+        ],
+        "title": "Meta",
+        "description": "Envelope metadata."
+      },
+      "ModuleError": {
+        "properties": {
+          "module": {
+            "type": "string",
+            "title": "Module"
+          },
+          "code": {
+            "$ref": "#/components/schemas/ErrorCode"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "module",
+          "code",
+          "message"
+        ],
+        "title": "ModuleError",
+        "description": "A single domain module's failure, surfaced without failing the whole response."
+      },
+      "Page_CustomerSearchHit_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CustomerSearchHit"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "type": "object",
+        "title": "Page[CustomerSearchHit]"
+      },
+      "Page_dict_str__Any__": {
+        "properties": {
+          "items": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "type": "object",
+        "title": "Page[dict[str, Any]]"
+      },
+      "ReadyPayload": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "not_ready"
+            ],
+            "title": "Status"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "default": "0.1.0"
+          },
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/ComponentPayload"
+            },
+            "type": "array",
+            "title": "Components"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "components"
+        ],
+        "title": "ReadyPayload",
+        "description": "Readiness payload: the aggregate plus every component's outcome."
+      },
+      "RecomputePayload": {
+        "properties": {
+          "row_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Row Counts",
+            "description": "Rows written per projected target (derived tables, search index, graph)."
+          },
+          "total_rows": {
+            "type": "integer",
+            "title": "Total Rows"
+          },
+          "elapsed_seconds": {
+            "type": "number",
+            "title": "Elapsed Seconds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "row_counts",
+          "total_rows",
+          "elapsed_seconds"
+        ],
+        "title": "RecomputePayload",
+        "description": "What the recompute produced: per-target row counts and how long it took."
+      },
+      "RefreshRequest": {
+        "properties": {
+          "refresh_token": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Refresh Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "refresh_token"
+        ],
+        "title": "RefreshRequest",
+        "description": "Refresh-grant token."
+      },
+      "ReportScopeKind": {
+        "type": "string",
+        "enum": [
+          "CUSTOMER",
+          "BOOK",
+          "SEGMENT"
+        ],
+        "title": "ReportScopeKind",
+        "description": "What a report runs over (task 18.1).\n\n* ``CUSTOMER`` \u2014 a single customer, named by ``customer_id``.\n* ``BOOK`` \u2014 an explicit set of customer ids the owner is entitled to.\n* ``SEGMENT`` \u2014 every customer in one or more segments, within the owner's entitlement."
+      },
+      "ReportType": {
+        "type": "string",
+        "enum": [
+          "PDF_PACK",
+          "MEETING_BRIEFING"
+        ],
+        "title": "ReportType",
+        "description": "The closed set of report kinds Phase 18 produces.\n\n* ``PDF_PACK`` \u2014 a branded 360 PDF pack per customer, assembled from the masked service reads\n  (task 18.2).\n* ``MEETING_BRIEFING`` \u2014 a prepare-for-meeting briefing composing the 360 summary, open signals\n  and cited talking points (task 18.3)."
+      },
+      "RunList": {
+        "properties": {
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/RunView"
+            },
+            "type": "array",
+            "title": "Runs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "runs"
+        ],
+        "title": "RunList"
+      },
+      "RunReportsPayload": {
+        "properties": {
+          "schedules_due": {
+            "type": "integer",
+            "title": "Schedules Due"
+          },
+          "runs_started": {
+            "type": "integer",
+            "title": "Runs Started"
+          },
+          "runs_succeeded": {
+            "type": "integer",
+            "title": "Runs Succeeded"
+          },
+          "runs_failed": {
+            "type": "integer",
+            "title": "Runs Failed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "schedules_due",
+          "runs_started",
+          "runs_succeeded",
+          "runs_failed"
+        ],
+        "title": "RunReportsPayload",
+        "description": "What a scheduled-report batch produced (task 18.4)."
+      },
+      "RunView": {
+        "properties": {
+          "run_id": {
+            "type": "integer",
+            "title": "Run Id"
+          },
+          "definition_id": {
+            "type": "integer",
+            "title": "Definition Id"
+          },
+          "report_type": {
+            "type": "string",
+            "title": "Report Type"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "trigger_kind": {
+            "type": "string",
+            "title": "Trigger Kind"
+          },
+          "customers_rendered": {
+            "type": "integer",
+            "title": "Customers Rendered"
+          },
+          "model_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Model Ids"
+          },
+          "prompt_versions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Prompt Versions"
+          },
+          "degraded": {
+            "type": "boolean",
+            "title": "Degraded"
+          },
+          "started_at": {
+            "type": "string",
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "definition_id",
+          "report_type",
+          "status",
+          "trigger_kind",
+          "customers_rendered",
+          "model_ids",
+          "prompt_versions",
+          "degraded",
+          "started_at",
+          "finished_at",
+          "error"
+        ],
+        "title": "RunView",
+        "description": "A run's status and provenance, value-free (task 18.5)."
+      },
+      "ScheduleBody": {
+        "properties": {
+          "cadence": {
+            "type": "string",
+            "pattern": "^(DAILY|WEEKLY|MONTHLY)$",
+            "title": "Cadence"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cadence"
+        ],
+        "title": "ScheduleBody",
+        "description": "The body of ``POST /reports/{id}/schedules`` (task 18.5)."
+      },
+      "ScheduleCreated": {
+        "properties": {
+          "schedule_id": {
+            "type": "integer",
+            "title": "Schedule Id"
+          },
+          "definition_id": {
+            "type": "integer",
+            "title": "Definition Id"
+          },
+          "cadence": {
+            "type": "string",
+            "title": "Cadence"
+          }
+        },
+        "type": "object",
+        "required": [
+          "schedule_id",
+          "definition_id",
+          "cadence"
+        ],
+        "title": "ScheduleCreated"
+      },
+      "ScopeBody": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/ReportScopeKind"
+          },
+          "customer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Id"
+          },
+          "customer_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Customer Ids",
+            "default": []
+          },
+          "segments": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Segments",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "ScopeBody",
+        "description": "The scope a report runs over (task 18.1)."
+      },
+      "TokenPayload": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "refresh_token": {
+            "type": "string",
+            "title": "Refresh Token"
+          },
+          "token_type": {
+            "type": "string",
+            "title": "Token Type",
+            "default": "Bearer"
+          },
+          "expires_in": {
+            "type": "integer",
+            "title": "Expires In"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token",
+          "refresh_token",
+          "expires_in"
+        ],
+        "title": "TokenPayload",
+        "description": "An issued token pair, in the OAuth 2.0 response shape."
+      },
+      "TokenRequest": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Username"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "TokenRequest",
+        "description": "Password-grant credentials."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

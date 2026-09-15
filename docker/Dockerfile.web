@@ -1,0 +1,51 @@
+# syntax=docker/dockerfile:1.7
+
+# ---------------------------------------------------------------------------------------------------
+# Customer 360 web image (Phase 17 / 18).
+#
+# Stage 1 builds the Vite SPA (type-check + bundle). Stage 2 serves the static bundle with nginx and
+# reverse-proxies the API paths to the `api` service, so the browser makes same-origin requests and
+# CORS stays out of the picture — the production equivalent of the Vite dev proxy. SSE endpoints
+# (`/insights`, `/recommendations`, `/ask`) need buffering off, which the nginx config handles.
+#
+# The upstream API host is baked from a build arg (defaults to the compose service name `api`); on
+# AWS set it to the internal DNS / service URL of the api service.
+# ---------------------------------------------------------------------------------------------------
+
+# ============================================================ 1. build the SPA
+FROM node:20-bookworm-slim AS build
+
+WORKDIR /app
+
+# Install with the committed lockfile for a reproducible build.
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN npm ci
+
+COPY frontend/ ./
+# `npm run build` runs `tsc --noEmit && vite build`, so a type error fails the image build.
+RUN npm run build
+
+# ============================================================ 2. serve with nginx
+FROM nginx:1.27-alpine AS runtime
+
+# The API upstream host/port the SPA's same-origin calls are proxied to. Compose/AWS override these
+# at runtime (they are consumed by envsubst against the nginx template at container start).
+ARG API_UPSTREAM_HOST=api
+ARG API_UPSTREAM_PORT=8000
+
+COPY docker/web-nginx.conf.template /etc/nginx/templates/default.conf.template
+COPY --from=build /app/dist /usr/share/nginx/html
+
+ENV API_UPSTREAM_HOST=${API_UPSTREAM_HOST} \
+    API_UPSTREAM_PORT=${API_UPSTREAM_PORT} \
+    NGINX_PORT=8080 \
+    # Restrict envsubst to only our template vars so nginx's own $host/$uri/etc. are left intact.
+    NGINX_ENVSUBST_FILTER="^(API_UPSTREAM_HOST|API_UPSTREAM_PORT|NGINX_PORT)$"
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=4s --start-period=10s --retries=3 \
+    CMD wget -q -O /dev/null http://127.0.0.1:8080/ || exit 1
+
+# nginx:alpine's entrypoint renders /etc/nginx/templates/*.template with envsubst before start.
+CMD ["nginx", "-g", "daemon off;"]

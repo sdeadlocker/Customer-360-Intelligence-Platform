@@ -1,0 +1,87 @@
+{
+  "uid": "c360-retrieval-quality",
+  "title": "C360 — Retrieval quality",
+  "tags": ["c360", "phase-10"],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Retrieval latency p95 by stage",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "c360-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 500 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum(rate(c360_retrieval_stage_duration_milliseconds_bucket[5m])) by (le, c360_retrieval_stage))",
+          "legendFormat": "{{c360_retrieval_stage}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Zero-result rate",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "c360-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(c360_retrieval_zero_result_total[5m]))",
+          "legendFormat": "zero-result/s"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Rerank usage",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "c360-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(c360_retrieval_rerank_used_total[5m]))",
+          "legendFormat": "reranked/s"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Candidate vs result counts (p50)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "c360-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.5, sum(rate(c360_retrieval_candidate_count_bucket[5m])) by (le))",
+          "legendFormat": "candidates p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.5, sum(rate(c360_retrieval_result_count_bucket[5m])) by (le))",
+          "legendFormat": "results p50"
+        }
+      ]
+    }
+  ]
+}

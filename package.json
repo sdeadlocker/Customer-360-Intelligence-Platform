@@ -1,0 +1,39 @@
+{
+  "name": "customer-360-intelligence-platform",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Unified tooling entry point. Mirrors the Makefile for environments without make.",
+  "type": "module",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "check": "npm run check:backend && npm run check:frontend",
+
+    "check:backend": "npm run lint:backend && npm run types:backend && npm run test:backend",
+    "check:frontend": "npm --prefix frontend run check",
+
+    "lint:backend": "node scripts/backend.mjs -m ruff check src tests && node scripts/backend.mjs -m black --check src tests",
+    "lint:frontend": "npm --prefix frontend run lint",
+    "lint": "npm run lint:backend && npm run lint:frontend",
+
+    "types:backend": "node scripts/backend.mjs -m mypy",
+    "types:frontend": "npm --prefix frontend run typecheck",
+    "types": "npm run types:backend && npm run types:frontend",
+
+    "test:backend": "node scripts/backend.mjs -m pytest",
+    "test:frontend": "npm --prefix frontend run test",
+    "test": "npm run test:backend && npm run test:frontend",
+
+    "fmt:backend": "node scripts/backend.mjs -m black src tests && node scripts/backend.mjs -m ruff check --fix src tests",
+    "fmt:frontend": "npm --prefix frontend run format",
+    "fmt": "npm run fmt:backend && npm run fmt:frontend",
+
+    "dev:api": "node scripts/backend.mjs -m uvicorn c360.main:create_app --factory --reload --reload-dir src --host 127.0.0.1 --port 8000",
+    "dev:api:noreload": "node scripts/backend.mjs -m uvicorn c360.main:create_app --factory --host 127.0.0.1 --port 8000",
+    "dev:web": "npm --prefix frontend run dev",
+
+    "obs:up": "docker compose -f docker/docker-compose.yml up -d",
+    "obs:down": "docker compose -f docker/docker-compose.yml down"
+  }
+}

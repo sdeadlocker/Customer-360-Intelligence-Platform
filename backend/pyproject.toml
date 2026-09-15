@@ -1,0 +1,218 @@
+[project]
+name = "c360"
+version = "0.1.0"
+description = "Customer 360 Intelligence Platform — API, agents and evaluation"
+requires-python = ">=3.12,<3.13"
+
+# Exact pins only, per task 0.1. Transitive resolution is captured in uv.lock, so an install is
+# byte-reproducible; see docs/toolchain.md.
+dependencies = [
+    "fastapi==0.141.1",
+    "uvicorn[standard]==0.52.4",
+    "pydantic==2.13.5",
+    "pydantic-settings==2.15.0",
+    "sqlalchemy==2.0.52",
+    "alembic==1.20.0",
+    # Phase 7 (task 7.2): the `sqlite-vec` extension provides the `vec0` virtual table for the
+    # semantic half of hybrid retrieval (design §9.3). Pure-C, no transitive dependencies; the
+    # Python package ships the loadable extension and exposes its path via `sqlite_vec.load`.
+    "sqlite-vec==0.1.9",
+    # Phase 8 (task 8.6): LangGraph provides the dashboard `StateGraph`, its reducer-annotated
+    # channels and the wave fan-out/join topology (design §8.1). `langgraph-checkpoint` is the
+    # checkpoint interface; `langgraph-checkpoint-sqlite` ships the `SqliteSaver` Phase 9 (task 9.2)
+    # uses for Q&A conversation memory in `checkpoints.db`. All pure Python; `langchain-core`
+    # arrives transitively and supplies the message/tool types the providers speak.
+    "langgraph==0.2.76",
+    "langgraph-checkpoint==2.1.2",
+    "langgraph-checkpoint-sqlite==2.0.2",
+    # Phase 8 (task 8.1): the `MockLLMProvider` renders deterministic narratives from fact tables
+    # via Jinja templates (design §8.5). Also used by the circuit-breaker template fallback, so it
+    # is a core dependency, not a dev-only one.
+    "jinja2==3.1.5",
+    "opentelemetry-api==1.44.0",
+    "opentelemetry-sdk==1.44.0",
+    "opentelemetry-exporter-otlp-proto-grpc==1.44.0",
+    "opentelemetry-instrumentation-fastapi==0.65b0",
+    "opentelemetry-semantic-conventions==0.65b0",
+    # Task 4.1: RS256 JWT issuance for the local provider and JWKS validation for OIDC. The
+    # `crypto` extra pulls in `cryptography`, which PyJWT requires for RSA algorithms.
+    "pyjwt[crypto]==2.13.0",
+]
+
+[project.optional-dependencies]
+# Phase 8 (task 8.2): the live Bedrock path. `langchain-aws` wraps `ChatBedrockConverse` for
+# generation and pulls `boto3` for the Titan embeddings runtime client. Kept optional and imported
+# lazily inside `BedrockProvider` so the mock path, CI and evaluation never import the AWS SDK and a
+# deployment with `LLM_PROVIDER=mock` needs no AWS dependency at all (design §8.5).
+bedrock = [
+    "langchain-aws==0.2.10",
+    "boto3==1.43.93",
+]
+dev = [
+    "ruff==0.16.7",
+    "black==26.5.1",
+    "mypy==2.3.1",
+    "pytest==9.1.1",
+    "pytest-cov==7.1.0",
+    # Starlette's TestClient requires httpx2; httpx 0.x is deprecated for that use.
+    "httpx2==2.12.0",
+]
+
+[project.scripts]
+# Task 2.8: `c360 seed --count 100 --seed 42`. Available after `uv sync`; `python -m c360` works
+# without a reinstall, which is why c360/__main__.py exists alongside this.
+c360 = "c360.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/c360"]
+
+# ---------------------------------------------------------------- ruff
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",    # pycodestyle
+    "F",         # pyflakes
+    "I",         # isort
+    "B",         # flake8-bugbear
+    "C4",        # comprehensions
+    "UP",        # pyupgrade
+    "N",         # pep8-naming
+    "ANN",       # flake8-annotations
+    "S",         # bandit
+    "A",         # builtin shadowing
+    "RUF",       # ruff-specific
+    "PL",        # pylint
+    "SIM",       # simplify
+    "TID",       # tidy imports
+    "PT",        # pytest style
+]
+ignore = [
+    "ANN401",  # allow typing.Any where a boundary genuinely needs it
+    "PLR0913", # argument count: settings objects legitimately have many fields
+]
+
+[tool.ruff.lint.per-file-ignores]
+# S311: non-cryptographic randomness is correct in tests; the generator's own seeding is the point.
+"tests/**" = ["S101", "ANN201", "ANN001", "PLR2004", "S311"]
+# PLR0917: FastAPI route handlers take their dependencies as parameters (request, principal,
+# services, plus path/query fields), so a read endpoint legitimately has more than five positional
+# parameters. PLR0913 is already ignored globally for the same reason; the positional variant is
+# ignored here, scoped to the route modules, rather than sprinkling per-function noqas.
+"src/c360/api/routes/**" = ["PLR0917"]
+# S311: the generator's whole contract is a *reproducible* pseudo-random stream seeded from --seed
+# (requirement 14.7). A cryptographic source would be unseedable and would break the byte-identical
+# guarantee that task 2.1 asserts. Nothing here protects a secret.
+"src/c360/generator/**" = ["S311"]
+# S608: this module is literal INSERT statements built from module-level constants, which is what a
+# hand-written fixture is. There is no external input anywhere in it.
+"tests/seed_data.py" = ["S608"]
+# Alembic requires these module-level names and this call shape; the DDL is deliberately literal
+# (see c360.data.ddl), so string-based query construction is the entire content of the file.
+"migrations/versions/*.py" = ["S608"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["c360"]
+
+# ---------------------------------------------------------------- black
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+# ---------------------------------------------------------------- mypy
+[tool.mypy]
+python_version = "3.12"
+files = ["src/c360", "tests", "migrations"]
+mypy_path = "src"
+plugins = ["pydantic.mypy"]
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_return_any = true
+no_implicit_reexport = true
+show_error_codes = true
+pretty = true
+
+# strict on the application package, per task 0.2
+[[tool.mypy.overrides]]
+module = "c360.*"
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+disallow_untyped_calls = true
+disallow_any_generics = true
+disallow_subclassing_any = true
+check_untyped_defs = true
+strict_equality = true
+extra_checks = true
+warn_unreachable = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_untyped_calls = false
+
+# sqlite-vec ships no type stubs or py.typed marker; it is a thin loader around a C extension used
+# only at the SQLite boundary. boto3/botocore are optional (imported lazily in the Bedrock
+# embedding provider) and untyped. Neither is worth a stub package.
+[[tool.mypy.overrides]]
+module = [
+    "sqlite_vec",
+    "boto3",
+    "botocore.config",
+    # langchain_aws is an optional, lazily-imported dependency (the Bedrock generation path) and
+    # ships no py.typed marker mypy can consume across the version range we pin.
+    "langchain_aws",
+    "langchain_aws.*",
+    # PyYAML ships no type stubs; it is used only in tests to parse the collector/alert/dashboard
+    # config fixtures, never in the application, so a stub package is not worth adding.
+    "yaml",
+]
+ignore_missing_imports = true
+
+# ---------------------------------------------------------------- pytest
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "."]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "-ra",
+    "--cov=c360",
+    "--cov-report=term-missing",
+    "--cov-report=xml",
+    "--cov-fail-under=85",
+]
+markers = [
+    "bedrock: opt-in tests that call live Amazon Bedrock; skipped without credentials",
+    "slow: excluded from the fast inner loop",
+]
+# Warnings are errors. Third-party deprecations that this codebase cannot act on are listed
+# individually rather than by relaxing the default, so a new warning of our own still fails.
+filterwarnings = [
+    "error",
+    # starlette 1.6 imports a deprecated anyio alias at module scope.
+    "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning",
+    # langgraph-checkpoint 2.1 emits a pending-deprecation about the future default of
+    # `allowed_objects` in its JsonPlus serializer, at import of langgraph.checkpoint. This
+    # codebase does not construct that serializer directly, so there is nothing to act on; the
+    # warning is filtered by message rather than by relaxing the error default.
+    "ignore:The default value of `allowed_objects` will change:PendingDeprecationWarning",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["src/c360"]
+
+[tool.coverage.report]
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@overload",
+]

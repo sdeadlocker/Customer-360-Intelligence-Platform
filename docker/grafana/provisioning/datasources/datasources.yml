@@ -1,0 +1,20 @@
+# Grafana datasources, provisioned as code (task 10.7). Prometheus for metrics, Jaeger for traces
+# — the two backends the local stack exports to. The dashboards reference Prometheus by its UID so
+# they are portable across environments that provision the same UID.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: c360-prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+
+  - name: Jaeger
+    uid: c360-jaeger
+    type: jaeger
+    access: proxy
+    url: http://jaeger:16686
+    editable: false

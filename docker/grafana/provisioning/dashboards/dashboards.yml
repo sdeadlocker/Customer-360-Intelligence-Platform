@@ -1,0 +1,15 @@
+# Dashboard provider (task 10.7): load every JSON dashboard under /var/lib/grafana/dashboards on
+# startup. `foldersFromFilesStructure` is off — the four dashboards live flat in one "C360" folder.
+apiVersion: 1
+
+providers:
+  - name: c360
+    orgId: 1
+    folder: 'C360'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

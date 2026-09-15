@@ -1,0 +1,112 @@
+{
+  "uid": "c360-platform-health",
+  "title": "C360 — Platform health",
+  "tags": ["c360", "phase-10"],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "time": { "from": "now-1h", "to": "now" },
+  "refresh": "30s",
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Request rate by route (RED — Rate)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "c360-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(c360_http_server_requests_total[5m])) by (route)",
+          "legendFormat": "{{route}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Error ratio (RED — Errors)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "c360-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(c360_http_server_errors_total[5m])) / clamp_min(sum(rate(c360_http_server_requests_total[5m])), 1)",
+          "legendFormat": "5xx ratio"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Request latency p95 (RED — Duration)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "c360-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 3000 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum(rate(c360_http_server_request_duration_milliseconds_bucket[5m])) by (le, route))",
+          "legendFormat": "{{route}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Latency budget breaches",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "c360-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(c360_http_server_budget_breach_total[5m])) by (route)",
+          "legendFormat": "{{route}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "DB connection-pool checkout wait p95",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "c360-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum(rate(c360_db_pool_checkout_wait_milliseconds_bucket[5m])) by (le))",
+          "legendFormat": "pool wait p95"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "SQLITE_BUSY retries",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "c360-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(c360_db_sqlite_busy_total[5m]))",
+          "legendFormat": "busy retries/s"
+        }
+      ]
+    }
+  ]
+}

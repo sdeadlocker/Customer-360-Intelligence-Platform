@@ -1,0 +1,142 @@
+# SLO definitions and multi-window error-budget burn-rate alerting (task 10.6, design §13.5).
+#
+# Each SLO in design §13.5 maps to a stated requirement, so an error-budget breach is a requirement
+# breach. Alerting is on multi-window burn rate rather than single-sample thresholds — the pattern
+# that avoids the pager noise that gets alerts muted (§13.5). Each latency SLO uses two windows: a
+# fast/short window catches a sudden burn, a slow/long window catches a grind; both must fire, so a
+# brief blip does not page but a sustained budget burn does.
+#
+# Metric names follow the collector's Prometheus normalization (dots -> underscores, histograms
+# expose `_milliseconds_bucket` / `_count` series, counters gain `_total`). Recording rules compute
+# the p95 and the burn ratios once so the alert expressions stay readable.
+
+groups:
+  # ------------------------------------------------------------------ recording rules
+  - name: c360-slo-recording
+    interval: 30s
+    rules:
+      # HTTP availability: fraction of requests that errored (5xx), fast and slow windows.
+      - record: c360:http_error_ratio:rate5m
+        expr: >
+          sum(rate(c360_http_server_errors_total[5m]))
+          / clamp_min(sum(rate(c360_http_server_requests_total[5m])), 1)
+      - record: c360:http_error_ratio:rate1h
+        expr: >
+          sum(rate(c360_http_server_errors_total[1h]))
+          / clamp_min(sum(rate(c360_http_server_requests_total[1h])), 1)
+
+      # p95 latencies from the histogram buckets, by signal.
+      - record: c360:http_request_p95_ms:5m
+        expr: >
+          histogram_quantile(
+            0.95,
+            sum(rate(c360_http_server_request_duration_milliseconds_bucket[5m])) by (le)
+          )
+      - record: c360:agent_duration_p95_ms:5m
+        expr: >
+          histogram_quantile(
+            0.95, sum(rate(c360_agent_duration_milliseconds_bucket[5m])) by (le)
+          )
+      # Graph query latency: the neighborhood traversal duration, keyed off the graph statement id
+      # on the DB query-duration histogram (design §13.3 graph query latency SLO).
+      - record: c360:graph_query_p95_ms:5m
+        expr: >
+          histogram_quantile(
+            0.95,
+            sum(
+              rate(
+                c360_db_query_duration_milliseconds_bucket{statement_id="graph.neighborhood"}[5m]
+              )
+            ) by (le)
+          )
+      - record: c360:retrieval_p95_ms:5m
+        expr: >
+          histogram_quantile(
+            0.95,
+            sum(rate(c360_retrieval_stage_duration_milliseconds_bucket[5m])) by (le)
+          )
+
+  # ------------------------------------------------------------------ SLO alerts
+  - name: c360-slo-alerts
+    rules:
+      # SLO: API availability 99.5% (requirement 13.7). Budget = 0.5% errors. Multi-window burn:
+      # both a fast burn (5m) and a slower burn (1h) above 14.4x the budget rate must hold.
+      - alert: ApiAvailabilityBurnRateFast
+        expr: >
+          c360:http_error_ratio:rate5m > (14.4 * 0.005)
+          and c360:http_error_ratio:rate1h > (14.4 * 0.005)
+        for: 2m
+        labels:
+          severity: page
+          slo: api_availability
+          requirement: '13.7'
+        annotations:
+          summary: 'API availability error budget burning fast'
+          description: >
+            The 5xx ratio is above 14.4x the 99.5% error budget over both the 5m and 1h windows.
+            At this rate the monthly error budget is exhausted in about two days.
+
+      # SLO: dashboard/API request latency p95 < 3 s over 30 days (requirement 13.1).
+      - alert: RequestLatencyP95High
+        expr: c360:http_request_p95_ms:5m > 3000
+        for: 10m
+        labels:
+          severity: warning
+          slo: request_latency
+          requirement: '13.1'
+        annotations:
+          summary: 'Request latency p95 above 3 s'
+          description: 'p95 HTTP request latency has held above the 3 s budget for ten minutes.'
+
+      # SLO: agent response latency p95 < 5 s (requirement 13.2).
+      - alert: AgentLatencyP95High
+        expr: c360:agent_duration_p95_ms:5m > 5000
+        for: 10m
+        labels:
+          severity: warning
+          slo: agent_latency
+          requirement: '13.2'
+        annotations:
+          summary: 'Agent latency p95 above 5 s'
+          description: 'p95 agent duration has held above the 5 s budget for ten minutes.'
+
+      # SLO: graph query latency p95 < 2 s (requirement 13.3, design §13.5).
+      - alert: GraphLatencyP95High
+        expr: c360:graph_query_p95_ms:5m > 2000
+        for: 10m
+        labels:
+          severity: warning
+          slo: graph_latency
+          requirement: '13.3'
+        annotations:
+          summary: 'Graph query latency p95 above 2 s'
+          description: 'p95 graph neighborhood traversal has held above the 2 s budget for ten minutes.'
+
+      # SLO: retrieval latency p95 < 500 ms without rerank (requirement 17.12). The stage histogram
+      # aggregates stages; the fuse/embed stages dominate the agent-path budget.
+      - alert: RetrievalLatencyP95High
+        expr: c360:retrieval_p95_ms:5m > 500
+        for: 10m
+        labels:
+          severity: warning
+          slo: retrieval_latency
+          requirement: '17.12'
+        annotations:
+          summary: 'Retrieval latency p95 above 500 ms'
+          description: 'p95 retrieval stage latency has held above the 500 ms budget for ten minutes.'
+
+      # SLO: claim-validator rejections indicate groundedness pressure (requirement 10.9). A rising
+      # rejection rate means the model is repeatedly producing ungrounded figures.
+      - alert: ClaimRejectionRateHigh
+        expr: sum(rate(c360_agent_claim_rejections_total[15m])) > 0.1
+        for: 15m
+        labels:
+          severity: warning
+          slo: groundedness
+          requirement: '10.9'
+        annotations:
+          summary: 'Claim-validator rejection rate elevated'
+          description: >
+            Generated figures are being rejected for lack of grounding at an elevated rate over
+            fifteen minutes. Cards are falling back to templates (degraded); check the prompt
+            version and model.

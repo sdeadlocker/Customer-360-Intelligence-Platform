@@ -1,0 +1,69 @@
+# Collector configuration for an AWS backend (task 10.9, requirement 18.13).
+#
+# This is the *only* file that changes to move the platform's telemetry from the local Jaeger +
+# Prometheus stack to AWS X-Ray (traces) and CloudWatch (metrics). The application exports OTLP to
+# the collector and knows nothing about the backend behind it — swapping this config for
+# `otel-collector.yaml` is the whole migration, with no application change (design §13.7, §18.13).
+#
+# Run the collector with the AWS distro (aws-otel-collector) or the contrib image plus AWS
+# credentials from the default chain, exactly as the application resolves its Bedrock credentials.
+#
+#   command: ['--config=/etc/otel-collector.aws.yaml']
+
+receivers:
+  # Identical to the local config: the app's OTLP export is unchanged.
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 1s
+    send_batch_size: 512
+
+  # The same defence-in-depth scrub as the local config: the in-process allowlist is the primary
+  # guarantee, this is the belt-and-braces drop of keys that must never leave the process.
+  attributes/scrub:
+    actions:
+      - key: gen_ai.prompt
+        action: delete
+      - key: gen_ai.completion
+        action: delete
+      - key: db.statement.parameters
+        action: delete
+      - key: http.request.header.authorization
+        action: delete
+
+exporters:
+  # Traces -> AWS X-Ray. The X-Ray exporter maps OTLP spans onto X-Ray segments; the app's
+  # correlation id rides along as an annotation via the resource/span attributes it already sets.
+  awsxray:
+    region: ${env:AWS_REGION}
+    index_all_attributes: false
+
+  # Metrics -> CloudWatch via the EMF exporter. The namespace and log group are the only knobs; the
+  # metric names and the (allowlisted) dimensions are exactly what the app emits, so no metric is
+  # renamed or relabelled for CloudWatch.
+  awsemf:
+    region: ${env:AWS_REGION}
+    namespace: C360
+    log_group_name: /c360/metrics
+    dimension_rollup_option: NoDimensionRollup
+
+  debug:
+    verbosity: normal
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [attributes/scrub, batch]
+      exporters: [awsxray, debug]
+
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [awsemf, debug]

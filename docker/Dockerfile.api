@@ -1,0 +1,131 @@
+# syntax=docker/dockerfile:1.7
+
+# ---------------------------------------------------------------------------------------------------
+# Customer 360 API image (Phase 17 / 18, deployment path A — file-backed SQLite).
+#
+# Multi-stage:
+#   1. `builder`  — installs the pinned dependency set with uv into a self-contained venv.
+#   2. `seeder`   — uses that venv to build the read-only data plane INTO THE IMAGE: the seeded
+#                   customer DB, the derived/search/graph projections, and the knowledge index.
+#                   This is path A: the customer and knowledge databases are baked in, so a fresh
+#                   container is immediately queryable with no external datastore.
+#   3. `runtime`  — a slim final image carrying only the venv, the source, and the baked databases.
+#
+# At runtime the *read-only* databases (customer.db, knowledge.db) live in the image; the *writable*
+# databases (audit.db, checkpoints.db) are written under /data, which is expected to be a mounted
+# volume (an EFS access point on AWS) so audit and conversation state survive a container replace.
+#
+# The seed step runs entirely offline with the mock embedding provider by default, so the image
+# builds with no AWS account. To bake a knowledge index with real Titan embeddings instead, build
+# with `--build-arg EMBED_PROVIDER=bedrock` and BuildKit secrets for AWS credentials (see the note
+# at the ingest step); the default keeps the build hermetic.
+# ---------------------------------------------------------------------------------------------------
+
+ARG PYTHON_VERSION=3.12-slim-bookworm
+
+# ============================================================ 1. builder
+FROM python:${PYTHON_VERSION} AS builder
+
+# uv: fast, reproducible installs from the committed uv.lock.
+COPY --from=ghcr.io/astral-sh/uv:0.5.11 /uv /uvx /bin/
+
+ENV UV_LINK_MODE=copy \
+    UV_COMPILE_BYTECODE=1 \
+    UV_PYTHON_DOWNLOADS=never
+
+WORKDIR /app
+
+# The venv lives at /opt/venv and is the project environment uv manages.
+ENV VIRTUAL_ENV=/opt/venv \
+    UV_PROJECT_ENVIRONMENT=/opt/venv
+
+# Install dependencies first (cached layer) from the lock + project metadata, then the source. Using
+# `uv sync` against the committed uv.lock is the canonical, reproducible pattern — no requirements
+# export needed. The `bedrock` extra is included so the same image runs against live Bedrock by
+# flipping env with no rebuild; `--no-dev` keeps test/type tooling out of the runtime image.
+COPY backend/pyproject.toml backend/uv.lock backend/README.md* ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --extra bedrock --no-install-project
+
+# Now the source, then install the project itself into the same environment.
+COPY backend/ ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --extra bedrock
+
+# ============================================================ 2. seeder (bakes the data plane)
+FROM python:${PYTHON_VERSION} AS seeder
+
+# sqlite-vec loads a native extension; the slim base already has libsqlite3. Copy the ready venv and
+# source from the builder, then run the deterministic init sequence to produce the databases.
+COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /app /app
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1
+WORKDIR /app
+
+ARG SEED_CUSTOMER_COUNT=100
+ARG SEED_RANDOM_SEED=42
+ARG EMBED_PROVIDER=mock
+ARG EMBED_DIMENSIONS=1024
+
+# Build the seeded customer database, its derived/search/graph projections, and the knowledge index.
+# The prompt registry and knowledge corpus ship in the repo (prompts/, knowledge/), copied below.
+COPY prompts/ /app/prompts/
+COPY knowledge/ /app/knowledge/
+COPY config/ /app/config/
+
+# The knowledge corpus is copied to /app/knowledge above; point the ingester at it explicitly. The
+# path-based default resolves relative to the source file, which is wrong once the source lives under
+# a container prefix, so this env var makes the location unambiguous (see c360.knowledge.corpus).
+ENV C360_KNOWLEDGE_CORPUS_DIR=/app/knowledge
+
+# Seed -> recompute -> ingest, all writing under /app/data. With EMBED_PROVIDER=bedrock the ingest
+# step needs AWS credentials; pass them as BuildKit secrets and export them for that single RUN, e.g.
+#   docker build --secret id=aws,src=$HOME/.aws/credentials ...
+# The default (mock) needs nothing and keeps the build hermetic and offline.
+RUN mkdir -p /app/data && \
+    c360 seed --count "${SEED_CUSTOMER_COUNT}" --seed "${SEED_RANDOM_SEED}" --database /app/data/customer.db && \
+    c360 recompute --database /app/data/customer.db && \
+    c360 ingest-knowledge --database /app/data/knowledge.db --provider "${EMBED_PROVIDER}" --dimensions "${EMBED_DIMENSIONS}"
+
+# ============================================================ 3. runtime
+FROM python:${PYTHON_VERSION} AS runtime
+
+# A non-root user owns the app and the writable data volume.
+RUN groupadd --system c360 && useradd --system --gid c360 --home /app --shell /usr/sbin/nologin c360
+
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    # Read-only databases baked into the image; writable ones under /data (mounted volume on AWS).
+    SQLITE_DB_PATH=/app/data/customer.db \
+    SQLITE_KNOWLEDGE_DB_PATH=/app/data/knowledge.db \
+    SQLITE_AUDIT_DB_PATH=/data/audit.db \
+    SQLITE_CHECKPOINT_DB_PATH=/data/checkpoints.db \
+    API_HOST=0.0.0.0 \
+    API_PORT=8000
+
+WORKDIR /app
+
+COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /app /app
+# The baked read-only data plane (customer + knowledge DBs and their projections).
+COPY --from=seeder /app/data /app/data
+COPY prompts/ /app/prompts/
+COPY knowledge/ /app/knowledge/
+COPY config/ /app/config/
+
+# The writable volume mount point for audit and checkpoint databases.
+RUN mkdir -p /data && chown -R c360:c360 /app /data
+VOLUME ["/data"]
+
+USER c360
+EXPOSE 8000
+
+# Readiness/liveness are served by the app; the platform (App Runner/ECS) probes /health and /ready.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4).status==200 else 1)"
+
+# Single worker: SQLite is a single-writer store (path A), and the audit DB has one writer thread by
+# design. Scale the read path horizontally with more tasks behind the load balancer, not workers.
+CMD ["uvicorn", "c360.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]

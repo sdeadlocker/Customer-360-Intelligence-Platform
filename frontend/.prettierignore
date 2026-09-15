@@ -1,0 +1,9 @@
+dist
+coverage
+node_modules
+package-lock.json
+
+# Machine-generated API types and the OpenAPI snapshot they derive from (task 12.1). Formatting
+# these would fight the generator on every codegen and cause a spurious drift-check failure.
+src/api/generated
+openapi.json

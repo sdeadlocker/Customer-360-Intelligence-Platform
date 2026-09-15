@@ -1,0 +1,41 @@
+{
+  "_comment": "AWS-managed policies available on the deployer/CI identity for Customer 360 (Phase 20). This inventory mirrors the policies attached in the target account. These broad FullAccess policies are for the HUMAN/CI deployer identity that provisions and updates infrastructure. They MUST NOT be attached to the ECS task role the app runs under at runtime — see deploy/iam/task-role-policy.json for the least-privilege runtime role, per tasks.md 20.5.",
+  "deployerManagedPolicyArns": [
+    "arn:aws:iam::aws:policy/AmazonAPIGatewayAdministrator",
+    "arn:aws:iam::aws:policy/AmazonBedrockFullAccess",
+    "arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess",
+    "arn:aws:iam::aws:policy/AmazonEC2FullAccess",
+    "arn:aws:iam::aws:policy/AmazonECS_FullAccess",
+    "arn:aws:iam::aws:policy/AmazonEventBridgeFullAccess",
+    "arn:aws:iam::aws:policy/AmazonOpenSearchServiceFullAccess",
+    "arn:aws:iam::aws:policy/AmazonRDSFullAccess",
+    "arn:aws:iam::aws:policy/AmazonS3FullAccess",
+    "arn:aws:iam::aws:policy/AmazonSNSFullAccess",
+    "arn:aws:iam::aws:policy/AmazonSQSFullAccess",
+    "arn:aws:iam::aws:policy/AmazonVPCFullAccess",
+    "arn:aws:iam::aws:policy/AWSLambda_FullAccess",
+    "arn:aws:iam::aws:policy/AWSStepFunctionsFullAccess",
+    "arn:aws:iam::aws:policy/BedrockAgentCoreFullAccess",
+    "arn:aws:iam::aws:policy/CloudFrontFullAccess",
+    "arn:aws:iam::aws:policy/CloudWatchFullAccess",
+    "arn:aws:iam::aws:policy/SecretsManagerReadWrite"
+  ],
+  "requiredButNotSeenInScreenshot": [
+    {
+      "policy": "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryFullAccess",
+      "why": "Required to push the c360-api and c360-web images to ECR (tasks.md 20.2). No ECR policy was visible in the shared list — confirm it is attached or image push will fail. AmazonEC2ContainerRegistryPowerUser is sufficient if you prefer narrower push access."
+    },
+    {
+      "policy": "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
+      "why": "Attached to the ECS task EXECUTION role (not the deployer) so Fargate can pull images and ship container logs. Provisioned by Terraform in deploy/terraform."
+    },
+    {
+      "policy": "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess",
+      "why": "For the ADOT/OTel collector sidecar to write traces to X-Ray (tasks.md 20.7). Covered by the inline task-role statements in deploy/iam/task-role-policy.json; listed here as the managed-policy alternative."
+    },
+    {
+      "policy": "arn:aws:iam::aws:policy/AWSCertificateManagerFullAccess (or ReadOnly)",
+      "why": "For provisioning/validating the ACM certificate used by the ALB (tasks.md 20.3). ACM access was not visible in the shared list."
+    }
+  ]
+}

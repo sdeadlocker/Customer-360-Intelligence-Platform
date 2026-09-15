@@ -1,0 +1,56 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# --- Node ---
+node_modules/
+dist/
+.vite/
+coverage/
+*.tsbuildinfo
+
+# --- Data (generated; never committed) ---
+# Match generated SQLite databases anywhere in the tree (top-level data/ and backend/data/).
+*.db
+*.db-wal
+*.db-shm
+data/ground_truth/
+
+# --- Secrets and local config ---
+.env
+.env.local
+*.pem
+*.key
+!config/**/*.example
+
+# --- Terraform ---
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+crash.log
+# Real tfvars may hold environment specifics; commit only the example.
+terraform.tfvars
+!terraform.tfvars.example
+
+# --- Misc build/generated artifacts ---
+build/
+*.log
+backend/t.log
+backend/_o.txt
+
+# --- Editors / OS ---
+.DS_Store
+Thumbs.db
+.idea/
+*.swp

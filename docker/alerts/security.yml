@@ -1,0 +1,89 @@
+# Audit and security signal alerts (task 10.4, design §13.5 immediate-page conditions).
+#
+# These are the "page a human now" conditions, distinct from the multi-window SLO burn-rate alerts
+# in `slo.yml`. Design §13.5 names four immediate-page conditions; three of them are security/audit
+# signals and live here (the fourth, a nonzero entitlement violation from the eval gate, is a CI
+# gate in Phase 11, not a runtime alert).
+#
+# Metric names follow the collector's Prometheus exporter normalization: dots become underscores and
+# monotonic counters gain a `_total` suffix. So `c360.audit.fail_closed` (an OTel counter) is scraped
+# as `c360_audit_fail_closed_total`, and the observable gauge `c360.audit.queue_depth` as
+# `c360_audit_queue_depth`.
+
+groups:
+  - name: c360-audit
+    rules:
+      # An unauditable request is refused (fail-closed). Even one is a correctness incident: the
+      # platform's contract is that no customer read is served unaudited (design §7.4). Page.
+      - alert: AuditFailClosed
+        expr: increase(c360_audit_fail_closed_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: page
+        annotations:
+          summary: 'Audit queue saturated — requests are being refused unaudited'
+          description: >
+            The audit write queue filled and at least one request failed closed in the last 5
+            minutes. Reads cannot be served without an audit record; investigate the audit writer
+            thread and queue depth immediately.
+
+      # Sustained queue depth is the leading indicator of the fail-closed above: the writer is not
+      # keeping up. Warn before it saturates.
+      - alert: AuditQueueBacklog
+        expr: c360_audit_queue_depth > 1000
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Audit write queue is backing up'
+          description: >
+            Audit queue depth has held above 1000 for two minutes. The single writer thread is
+            falling behind; a fail-closed refusal is imminent if this continues.
+
+      # The writer thread is the single point of the audit path. If the queue is non-empty but no
+      # records are being written, the thread is wedged or dead.
+      - alert: AuditWriterStalled
+        expr: >
+          c360_audit_queue_depth > 0
+          and increase(c360_audit_records_written_total[5m]) == 0
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: 'Audit writer is not draining the queue'
+          description: >
+            The audit queue is non-empty yet no records were written in five minutes. The writer
+            thread is likely dead; readiness will fail shortly and every request will fail closed.
+
+  - name: c360-security
+    rules:
+      # A spike in entitlement denials is either a misconfiguration or an active probe for customers
+      # outside a book. Rate-based so a single legitimate 403 does not page.
+      - alert: DeniedAccessSpike
+        expr: sum(rate(c360_security_denied_access_total[5m])) by (role) > 1
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: 'Entitlement-denial spike for role {{ $labels.role }}'
+          description: >
+            Access denials for role {{ $labels.role }} have exceeded one per second (5m rate) for
+            five minutes. This is either a broken entitlement scope or an account enumerating
+            customers outside its book — treat as a security event.
+
+  - name: c360-breakers
+    rules:
+      # A circuit breaker opening on a Bedrock-dependent path means generation, embedding or rerank
+      # is degraded to a fallback. Insights and Q&A still serve (degraded), but this is a
+      # dependency outage worth paging on (design §13.5).
+      - alert: CircuitBreakerOpen
+        expr: increase(c360_security_breaker_transition_total{state="open"}[5m]) > 0
+        for: 0m
+        labels:
+          severity: page
+        annotations:
+          summary: 'Circuit breaker "{{ $labels.breaker }}" opened'
+          description: >
+            The {{ $labels.breaker }} breaker tripped open in the last 5 minutes: its Bedrock
+            dependency is failing repeatedly and the platform is serving the deterministic
+            fallback. Investigate Bedrock reachability and throttling.
