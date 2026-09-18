@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 560" width="1000" height="560" font-family="Segoe UI, Inter, system-ui, sans-serif" role="img" aria-label="Customer 360 animated architecture: a request flows down presentation, edge, services, agents, data.">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#16224a"/>
+      <stop offset="1" stop-color="#0b1020"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#141b33"/>
+      <stop offset="1" stop-color="#1b2440"/>
+    </linearGradient>
+    <style>
+      .layer { opacity: 0; transform: translateY(12px); animation: rise .6s ease forwards; }
+      .l1 { animation-delay: .1s } .l2 { animation-delay: .3s } .l3 { animation-delay: .5s }
+      .l4 { animation-delay: .7s } .l5 { animation-delay: .9s }
+      @keyframes rise { to { opacity: 1; transform: translateY(0); } }
+      .title { fill: #e8edfb; font-weight: 700; }
+      .sub { fill: #9fb0d6; }
+      .badge { fill: #5b8cff; font-weight: 700; font-size: 15px; }
+      .badge2 { fill: #22d3a7; }
+      .badge3 { fill: #ffb454; }
+      .desc { fill: #cdd8f5; font-size: 14px; }
+      .foot { fill: #9fb0d6; font-size: 13px; }
+      .pulse { fill: #22d3a7; }
+    </style>
+  </defs>
+
+  <rect width="1000" height="560" fill="url(#bg)"/>
+  <text x="40" y="44" class="title" font-size="26">Customer 360 — Architecture</text>
+  <text x="40" y="70" class="sub" font-size="14">A request flows down the stack — grounded, masked, entitled and observed at every layer.</text>
+
+  <!-- layers -->
+  <g class="layer l1">
+    <rect x="90" y="92" width="700" height="62" rx="12" fill="url(#panel)" stroke="#2b3a63"/>
+    <text x="112" y="122" class="badge">Presentation</text>
+    <text x="112" y="142" class="desc">React + TS — Login · Search · 360 Dashboard · Ask AI · Reports</text>
+  </g>
+  <g class="layer l2">
+    <rect x="90" y="176" width="700" height="62" rx="12" fill="url(#panel)" stroke="#2b3a63"/>
+    <text x="112" y="206" class="badge badge2">Edge (API)</text>
+    <text x="112" y="226" class="desc">FastAPI — AuthN/AuthZ · field-masking filter · trace ID · audit sink</text>
+  </g>
+  <g class="layer l3">
+    <rect x="90" y="260" width="700" height="62" rx="12" fill="url(#panel)" stroke="#2b3a63"/>
+    <text x="112" y="290" class="badge">Services</text>
+    <text x="112" y="310" class="desc">Customer · Financial · Risk · Offer · Relationship · Journey → Aggregator</text>
+  </g>
+  <g class="layer l4">
+    <rect x="90" y="344" width="700" height="62" rx="12" fill="url(#panel)" stroke="#2b3a63"/>
+    <text x="112" y="374" class="badge badge3">Agents (AI)</text>
+    <text x="112" y="394" class="desc">LangGraph · typed Tool Registry · Claim Validator · LLM → Bedrock</text>
+  </g>
+  <g class="layer l5">
+    <rect x="90" y="428" width="700" height="62" rx="12" fill="url(#panel)" stroke="#2b3a63"/>
+    <text x="112" y="458" class="badge">Data + RAG</text>
+    <text x="112" y="478" class="desc">SQLite (read-only) · append-only audit · hybrid retrieval (vec0 + FTS5)</text>
+  </g>
+
+  <!-- travelling pulse down the spine -->
+  <circle class="pulse" cx="90" cy="0" r="6">
+    <animateMotion path="M 0 120 L 0 460" dur="2.6s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.9;1" dur="2.6s" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- guarantees callout -->
+  <g class="layer l5">
+    <rect x="812" y="92" width="150" height="150" rx="12" fill="rgba(34,211,167,0.06)" stroke="#22d3a7" stroke-dasharray="4 4"/>
+    <text x="828" y="116" class="badge2" font-size="12" font-weight="700">ENFORCED</text>
+    <text x="828" y="140" class="desc" font-size="12">• Deterministic math</text>
+    <text x="828" y="162" class="desc" font-size="12">• Cited or rejected</text>
+    <text x="828" y="184" class="desc" font-size="12">• Masking in-query</text>
+    <text x="828" y="206" class="desc" font-size="12">• OTel every hop</text>
+  </g>
+
+  <text x="40" y="540" class="foot">github.com/sdeadlocker/Customer-360-Intelligence-Platform · The model narrates. It never calculates.</text>
+</svg>

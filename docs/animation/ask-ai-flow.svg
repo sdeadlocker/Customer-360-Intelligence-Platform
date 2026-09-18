@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 420" width="1000" height="420" font-family="Segoe UI, Inter, system-ui, sans-serif" role="img" aria-label="Ask AI grounding flow: question, tools, facts, validate, cited answer.">
+  <defs>
+    <linearGradient id="abg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#16224a"/>
+      <stop offset="1" stop-color="#0b1020"/>
+    </linearGradient>
+    <linearGradient id="apanel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#141b33"/>
+      <stop offset="1" stop-color="#1b2440"/>
+    </linearGradient>
+    <style>
+      .atitle { fill: #e8edfb; font-weight: 700; }
+      .asub { fill: #9fb0d6; }
+      .k { fill: #5b8cff; font-weight: 700; font-size: 12px; letter-spacing: .4px; }
+      .t { fill: #e8edfb; font-weight: 600; font-size: 15px; }
+      .d { fill: #9fb0d6; font-size: 12px; }
+      .arrow { fill: #9fb0d6; font-size: 20px; }
+      .ok { fill: #22d3a7; } .warn { fill: #ff6b6b; }
+      .node { animation: glow 10s linear infinite; }
+      .n1 { animation-delay: 0s } .n2 { animation-delay: 2s } .n3 { animation-delay: 4s }
+      .n4 { animation-delay: 6s } .n5 { animation-delay: 8s }
+      @keyframes glow {
+        0%,12% { stroke: #5b8cff; opacity: 1; }
+        20%,100% { stroke: #2b3a63; opacity: .55; }
+      }
+    </style>
+  </defs>
+
+  <rect width="1000" height="420" fill="url(#abg)"/>
+  <text x="40" y="44" class="atitle" font-size="26">Ask AI — grounded, or it doesn't ship</text>
+  <text x="40" y="70" class="asub" font-size="14">"Who are my high-risk customers?" → tools → facts → validation → cited answer</text>
+
+  <!-- 5 nodes -->
+  <g class="node n1"><rect x="40" y="100" width="168" height="150" rx="12" fill="url(#apanel)" stroke="#2b3a63"/></g>
+  <text x="56" y="124" class="k">1 · QUESTION</text>
+  <text x="176" y="128" font-size="22">💬</text>
+  <text x="56" y="152" class="t">Plain language</text>
+  <text x="56" y="176" class="d">Router classifies intent</text>
+  <text x="56" y="194" class="d">(facts / knowledge / both).</text>
+  <text x="216" y="182" class="arrow">→</text>
+
+  <g class="node n2"><rect x="240" y="100" width="168" height="150" rx="12" fill="url(#apanel)" stroke="#2b3a63"/></g>
+  <text x="256" y="124" class="k">2 · TOOLS</text>
+  <text x="376" y="128" font-size="22">🛠️</text>
+  <text x="256" y="152" class="t">Typed tool calls</text>
+  <text x="256" y="176" class="d">Entitlement-scoped reads;</text>
+  <text x="256" y="194" class="d">agents never touch the DB.</text>
+  <text x="416" y="182" class="arrow">→</text>
+
+  <g class="node n3"><rect x="440" y="100" width="168" height="150" rx="12" fill="url(#apanel)" stroke="#2b3a63"/></g>
+  <text x="456" y="124" class="k">3 · FACTS</text>
+  <text x="576" y="128" font-size="22">🧮</text>
+  <text x="456" y="152" class="t">Deterministic</text>
+  <text x="456" y="176" class="d">Computed in SQL /</text>
+  <text x="456" y="194" class="d">integer cents, masked.</text>
+  <text x="616" y="182" class="arrow">→</text>
+
+  <g class="node n4"><rect x="640" y="100" width="168" height="150" rx="12" fill="url(#apanel)" stroke="#2b3a63"/></g>
+  <text x="656" y="124" class="k">4 · VALIDATE</text>
+  <text x="776" y="128" font-size="22">✅</text>
+  <text x="656" y="152" class="t">Claim validator</text>
+  <text x="656" y="176" class="d">Every number must cite a</text>
+  <text x="656" y="194" class="d">fact, or it's rejected.</text>
+  <text x="816" y="182" class="arrow">→</text>
+
+  <g class="node n5"><rect x="840" y="100" width="120" height="150" rx="12" fill="url(#apanel)" stroke="#2b3a63"/></g>
+  <text x="856" y="124" class="k">5 · ANSWER</text>
+  <text x="928" y="128" font-size="22">📣</text>
+  <text x="856" y="152" class="t">Cited</text>
+  <text x="856" y="176" class="d">Streamed, with</text>
+  <text x="856" y="194" class="d">sources. Multi-turn.</text>
+
+  <!-- verdict chips -->
+  <rect x="150" y="290" width="330" height="46" rx="10" fill="url(#apanel)" stroke="#22d3a7"/>
+  <text x="170" y="318" class="ok" font-size="14">✅ Cited &amp; matches a record → shipped</text>
+
+  <rect x="520" y="290" width="360" height="46" rx="10" fill="url(#apanel)" stroke="#ff6b6b"/>
+  <text x="540" y="318" class="warn" font-size="14">🚫 Can't be traced → rejected (grounded fallback)</text>
+
+  <text x="40" y="392" class="asub" font-size="13">github.com/sdeadlocker/Customer-360-Intelligence-Platform · No hallucinated figure ever reaches the screen.</text>
+</svg>

@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Customer 360 — Architecture (animated)</title>
+    <style>
+      :root {
+        --bg: #0b1020;
+        --panel: #141b33;
+        --panel-2: #1b2440;
+        --stroke: #2b3a63;
+        --accent: #5b8cff;
+        --accent2: #22d3a7;
+        --accent3: #ffb454;
+        --text: #e8edfb;
+        --muted: #9fb0d6;
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        background: radial-gradient(1200px 700px at 50% -10%, #16224a 0%, var(--bg) 60%);
+        color: var(--text);
+        font-family: "Segoe UI", Inter, system-ui, -apple-system, sans-serif;
+      }
+      /* 1280x720 canvas — a clean 16:9 frame to screen-record for LinkedIn. */
+      .stage {
+        width: 1280px;
+        height: 720px;
+        margin: 0 auto;
+        position: relative;
+        padding: 28px 40px;
+        overflow: hidden;
+      }
+      .title { font-size: 30px; font-weight: 700; letter-spacing: 0.2px; }
+      .subtitle { color: var(--muted); font-size: 16px; margin-top: 4px; }
+      .flow { position: relative; margin-top: 22px; }
+      .layer {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
+        border: 1px solid var(--stroke);
+        border-radius: 14px;
+        padding: 16px 20px;
+        margin: 0 auto 16px;
+        width: 980px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+        opacity: 0;
+        transform: translateY(14px);
+        animation: rise 0.6s ease forwards;
+      }
+      .layer:nth-child(1) { animation-delay: 0.1s; }
+      .layer:nth-child(3) { animation-delay: 0.3s; }
+      .layer:nth-child(5) { animation-delay: 0.5s; }
+      .layer:nth-child(7) { animation-delay: 0.7s; }
+      .layer:nth-child(9) { animation-delay: 0.9s; }
+      @keyframes rise { to { opacity: 1; transform: translateY(0); } }
+
+      .badge {
+        min-width: 132px;
+        text-align: center;
+        font-weight: 700;
+        font-size: 14px;
+        padding: 8px 10px;
+        border-radius: 10px;
+        border: 1px solid var(--stroke);
+        background: #0f1730;
+        color: var(--accent);
+      }
+      .layer .desc { color: var(--muted); font-size: 14.5px; line-height: 1.45; }
+      .layer .desc b { color: var(--text); font-weight: 600; }
+
+      .l-edge .badge { color: var(--accent2); }
+      .l-agents .badge { color: var(--accent3); }
+
+      /* The connector between layers, with a pulse traveling down. */
+      .connector {
+        width: 3px;
+        height: 16px;
+        margin: -14px auto 0;
+        background: linear-gradient(var(--stroke), var(--stroke));
+        position: relative;
+        border-radius: 3px;
+      }
+      .pulse {
+        position: absolute;
+        left: 50%;
+        top: 0;
+        width: 10px;
+        height: 10px;
+        margin-left: -5px;
+        border-radius: 50%;
+        background: var(--accent2);
+        box-shadow: 0 0 12px 3px rgba(34, 211, 167, 0.7);
+        animation: fall 2.6s linear infinite;
+      }
+      @keyframes fall {
+        0% { transform: translateY(-320px); opacity: 0; }
+        10% { opacity: 1; }
+        90% { opacity: 1; }
+        100% { transform: translateY(340px); opacity: 0; }
+      }
+
+      .guard {
+        position: absolute;
+        right: 46px;
+        top: 96px;
+        width: 210px;
+        border: 1px dashed var(--accent2);
+        border-radius: 12px;
+        padding: 14px 16px;
+        background: rgba(34, 211, 167, 0.06);
+        font-size: 13px;
+        color: var(--muted);
+        opacity: 0;
+        animation: rise 0.6s ease 1.2s forwards;
+      }
+      .guard h4 { margin: 0 0 8px; color: var(--accent2); font-size: 13px; letter-spacing: 0.3px; }
+      .guard li { margin: 5px 0; }
+      .foot {
+        position: absolute;
+        bottom: 18px;
+        left: 0;
+        width: 100%;
+        text-align: center;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .foot b { color: var(--text); }
+      @media (prefers-reduced-motion: reduce) {
+        * { animation: none !important; opacity: 1 !important; transform: none !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="stage">
+      <div class="title">Customer 360 Intelligence Platform</div>
+      <div class="subtitle">A request flows down the stack — grounded, masked, entitled, observed at every layer.</div>
+
+      <div class="flow">
+        <div class="layer">
+          <span class="badge">Presentation</span>
+          <span class="desc">React + TypeScript — <b>Login · Search · 360 Dashboard · Ask AI · Reports</b></span>
+        </div>
+        <div class="connector"><span class="pulse" style="animation-delay: 0s"></span></div>
+
+        <div class="layer l-edge">
+          <span class="badge">Edge (API)</span>
+          <span class="desc">FastAPI — AuthN/AuthZ · <b>field-masking filter</b> · correlation/trace ID · audit sink</span>
+        </div>
+        <div class="connector"><span class="pulse" style="animation-delay: 0.5s"></span></div>
+
+        <div class="layer">
+          <span class="badge">Services</span>
+          <span class="desc">Customer · Financial · Risk · Offer · Relationship · Journey → <b>C360 Aggregator</b></span>
+        </div>
+        <div class="connector"><span class="pulse" style="animation-delay: 1s"></span></div>
+
+        <div class="layer l-agents">
+          <span class="badge">Agents (AI)</span>
+          <span class="desc">LangGraph · typed Tool Registry · <b>Claim Validator</b> · LLM → Amazon Bedrock</span>
+        </div>
+        <div class="connector"><span class="pulse" style="animation-delay: 1.5s"></span></div>
+
+        <div class="layer">
+          <span class="badge">Data + RAG</span>
+          <span class="desc">SQLite (read-only) · append-only audit · hybrid retrieval (vec0 + FTS5)</span>
+        </div>
+      </div>
+
+      <div class="guard">
+        <h4>ENFORCED END TO END</h4>
+        <ul style="margin: 0; padding-left: 16px">
+          <li>Deterministic math, not the LLM</li>
+          <li>Every figure cited or rejected</li>
+          <li>Masking + entitlement in-query</li>
+          <li>OpenTelemetry on every hop</li>
+        </ul>
+      </div>
+
+      <div class="foot">
+        github.com/sdeadlocker/Customer-360-Intelligence-Platform &nbsp;·&nbsp;
+        <b>The model narrates. It never calculates.</b>
+      </div>
+    </div>
+  </body>
+</html>

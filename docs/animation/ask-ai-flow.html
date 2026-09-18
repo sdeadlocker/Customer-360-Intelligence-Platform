@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Customer 360 — Ask AI grounding (animated)</title>
+    <style>
+      :root {
+        --bg: #0b1020;
+        --panel: #141b33;
+        --stroke: #2b3a63;
+        --accent: #5b8cff;
+        --ok: #22d3a7;
+        --warn: #ff6b6b;
+        --text: #e8edfb;
+        --muted: #9fb0d6;
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        background: radial-gradient(1000px 600px at 50% -10%, #16224a 0%, var(--bg) 60%);
+        color: var(--text);
+        font-family: "Segoe UI", Inter, system-ui, sans-serif;
+      }
+      .stage {
+        width: 1280px;
+        height: 720px;
+        margin: 0 auto;
+        position: relative;
+        padding: 34px 48px;
+      }
+      .title { font-size: 30px; font-weight: 700; }
+      .subtitle { color: var(--muted); font-size: 16px; margin-top: 4px; }
+
+      .track {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 18px;
+        margin-top: 60px;
+        align-items: stretch;
+      }
+      .node {
+        background: var(--panel);
+        border: 1px solid var(--stroke);
+        border-radius: 14px;
+        padding: 18px 16px;
+        min-height: 150px;
+        position: relative;
+        opacity: 0.35;
+        transform: scale(0.98);
+        transition: none;
+        animation: light 10s linear infinite;
+      }
+      .node .k { font-size: 13px; color: var(--accent); font-weight: 700; letter-spacing: 0.4px; }
+      .node .t { font-size: 16px; font-weight: 600; margin-top: 8px; }
+      .node .d { font-size: 13.5px; color: var(--muted); margin-top: 8px; line-height: 1.4; }
+      .node .glyph { font-size: 26px; position: absolute; top: 14px; right: 16px; }
+
+      .node:nth-child(1) { animation-delay: 0s; }
+      .node:nth-child(2) { animation-delay: 2s; }
+      .node:nth-child(3) { animation-delay: 4s; }
+      .node:nth-child(4) { animation-delay: 6s; }
+      .node:nth-child(5) { animation-delay: 8s; }
+      @keyframes light {
+        0%, 12% { opacity: 1; transform: scale(1); border-color: var(--accent); box-shadow: 0 0 24px rgba(91,140,255,0.35); }
+        20%, 100% { opacity: 0.35; transform: scale(0.98); border-color: var(--stroke); box-shadow: none; }
+      }
+
+      .arrow {
+        position: absolute;
+        top: 50%;
+        right: -14px;
+        color: var(--muted);
+        font-size: 22px;
+        transform: translateY(-50%);
+      }
+
+      .verdict {
+        margin-top: 52px;
+        display: flex;
+        gap: 24px;
+        justify-content: center;
+      }
+      .chip {
+        border-radius: 12px;
+        padding: 14px 20px;
+        font-size: 15px;
+        border: 1px solid var(--stroke);
+        background: var(--panel);
+      }
+      .chip.ok { border-color: var(--ok); color: var(--ok); }
+      .chip.warn { border-color: var(--warn); color: var(--warn); }
+      .chip b { color: var(--text); }
+
+      .foot {
+        position: absolute;
+        bottom: 20px;
+        left: 0;
+        width: 100%;
+        text-align: center;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .foot b { color: var(--text); }
+      @media (prefers-reduced-motion: reduce) {
+        .node { animation: none; opacity: 1; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="stage">
+      <div class="title">Ask AI — grounded, or it doesn't ship</div>
+      <div class="subtitle">"Who are my high-risk customers?" → tools → facts → validation → cited answer</div>
+
+      <div class="track">
+        <div class="node">
+          <span class="glyph">💬</span>
+          <div class="k">1 · QUESTION</div>
+          <div class="t">Plain language</div>
+          <div class="d">Router classifies intent (facts / knowledge / both).</div>
+          <span class="arrow">→</span>
+        </div>
+        <div class="node">
+          <span class="glyph">🛠️</span>
+          <div class="k">2 · TOOLS</div>
+          <div class="t">Typed tool calls</div>
+          <div class="d">Entitlement-scoped reads — agents never touch the DB directly.</div>
+          <span class="arrow">→</span>
+        </div>
+        <div class="node">
+          <span class="glyph">🧮</span>
+          <div class="k">3 · FACTS</div>
+          <div class="t">Deterministic</div>
+          <div class="d">Figures computed in SQL / integer cents, masked per role.</div>
+          <span class="arrow">→</span>
+        </div>
+        <div class="node">
+          <span class="glyph">✅</span>
+          <div class="k">4 · VALIDATE</div>
+          <div class="t">Claim validator</div>
+          <div class="d">Every number must cite a fact — within tolerance — or it's rejected.</div>
+          <span class="arrow">→</span>
+        </div>
+        <div class="node">
+          <span class="glyph">📣</span>
+          <div class="k">5 · ANSWER</div>
+          <div class="t">Cited narrative</div>
+          <div class="d">Streamed, with sources you can open. Multi-turn.</div>
+        </div>
+      </div>
+
+      <div class="verdict">
+        <div class="chip ok">✅ Cited &amp; matches a record → <b>shipped</b></div>
+        <div class="chip warn">🚫 Can't be traced → <b>rejected, degrades to a grounded fallback</b></div>
+      </div>
+
+      <div class="foot">
+        github.com/sdeadlocker/Customer-360-Intelligence-Platform &nbsp;·&nbsp;
+        <b>No hallucinated figure ever reaches the screen.</b>
+      </div>
+    </div>
+  </body>
+</html>

@@ -116,6 +116,8 @@ Ask about **one customer** or a **whole cohort**, in plain language, on both the
 and inside a customer's dashboard. Answers stream in, cite their sources by `[F]` id, and are
 rejected if a figure can't be traced to a record.
 
+![Ask AI grounding flow — question, tools, facts, validate, cited answer](docs/animation/ask-ai-flow.svg)
+
 ![Ask AI cohort question](docs/screenshots/ask-cohort.png)
 
 - **Cohort queries** — "who are my high-risk customers", "which clients are past due", "who is my
@@ -227,7 +229,16 @@ The ROI is a function of three multipliers a bank can plug its own numbers into:
 ## Architecture
 
 Layered so each guarantee (masking, grounding, entitlement, observability) lives in exactly one
-place:
+place. A request flows top to bottom; the same guarantees are enforced at every hop.
+
+![Architecture diagram](docs/animation/architecture.svg)
+
+> 🎬 An **animated** version (and the Ask AI grounding flow) lives in
+> [`docs/animation/`](docs/animation/) — open the HTML to watch it play, and see the folder's README
+> for turning it into a GIF/MP4 for slides or LinkedIn.
+
+<details>
+<summary>Plain-text layer view</summary>
 
 ```
 Presentation (React + TS)
@@ -247,6 +258,8 @@ Knowledge layer (RAG)                         Data layer
   Titan embeddings · knowledge.db             customer.db (read-only) · audit.db (append-only) ·
   (vec0 + FTS5)                               signals.db / reports.db (writable)
 ```
+
+</details>
 
 **Non-negotiable rules:** agents never touch the database (they read through the same typed tool
 registry the REST API uses); retrieval is for knowledge, never customer facts; the graph is derived
