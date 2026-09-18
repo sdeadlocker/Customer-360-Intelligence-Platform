@@ -133,6 +133,108 @@ class TestGrounding:
         assert "no supporting guidance" in state["answer"].lower()
 
 
+# ---------------------------------------------------------------- small talk (Phase 23)
+
+
+class TestSmallTalk:
+    """The assistant greets and explains itself rather than running small talk through search.
+
+    Without this the cross-customer path would feed "hi" to ``customer_search``, resolve no one,
+    and reply "No matching customer was found" — which reads as broken. These assert the friendly
+    replies, and — critically — that they are *not* mislabelled as a refusal or no-guidance, and
+    that a real question is untouched.
+    """
+
+    def test_a_greeting_is_answered_not_searched(self, graph: QaGraph, services: Services) -> None:
+        # customer_id=None is the cross-customer surface, where the bug appeared.
+        state = asyncio.run(graph.arun(_rm(services), None, "hi"))
+        assert "assistant" in state["answer"].lower()
+        assert "no matching customer" not in state["answer"].lower()
+        assert "no supporting guidance" not in state["answer"].lower()
+        assert state["refused"] is False
+        assert state["no_guidance"] is False
+        # A greeting makes no factual claim, so it carries no citations and is not degraded.
+        assert state["fact_citations"] == []
+
+    def test_a_capability_question_lists_what_it_can_do(
+        self, graph: QaGraph, services: Services
+    ) -> None:
+        state = asyncio.run(graph.arun(_rm(services), None, "what can you do?"))
+        answer = state["answer"].lower()
+        assert "eligibility" in answer or "risk" in answer
+        assert "no matching customer" not in answer
+
+    def test_a_thank_you_is_acknowledged(self, graph: QaGraph, services: Services) -> None:
+        state = asyncio.run(graph.arun(_rm(services), None, "thanks"))
+        assert "welcome" in state["answer"].lower()
+        assert state["refused"] is False
+
+    def test_a_real_question_still_resolves_and_grounds(
+        self, graph: QaGraph, services: Services
+    ) -> None:
+        # The small-talk shortcut must not swallow a substantive cross-customer question.
+        cid = _customer(services)
+        state = asyncio.run(graph.arun(_rm(services), cid, "what is their net worth?"))
+        assert state["fact_citations"], "a real question still grounds in facts"
+
+
+# ---------------------------------------------------------------- cohort & pitch (Ask AI upgrade)
+
+
+class TestCohortQuestions:
+    """A cohort question on the cross-customer surface lists real customers, not "no match"."""
+
+    def test_high_risk_cohort_lists_customers(self, graph: QaGraph, services: Services) -> None:
+        # The failing case from the report: a cohort question resolved nobody and read "no match".
+        state = asyncio.run(graph.arun(_rm(services), None, "tell me about high risk customers"))
+        answer = state["answer"].lower()
+        assert "no matching customer" not in answer
+        assert "no supporting guidance" not in answer
+        assert state["refused"] is False
+        # It routed to the cohort tool and listed customers by id.
+        assert "c-" in state["answer"].lower() or "risk" in answer
+
+    def test_delinquent_cohort_lists_past_due_customers(
+        self, graph: QaGraph, services: Services
+    ) -> None:
+        state = asyncio.run(graph.arun(_rm(services), None, "which of my clients are past due"))
+        answer = state["answer"].lower()
+        assert "no matching customer" not in answer
+        assert state["refused"] is False
+        assert state["no_guidance"] is False
+
+    def test_cohort_answer_is_not_degraded_by_the_claim_validator(
+        self, graph: QaGraph, services: Services
+    ) -> None:
+        """A cohort list carries id-shaped digits that are identifiers, not figures — so the numeric
+        claim validator must not degrade it (the picker-only exemption)."""
+        state = asyncio.run(graph.arun(_rm(services), None, "list my platinum clients"))
+        # An empty cohort is a valid answer; a degraded one means the validator wrongly fired.
+        assert state["degraded"] is False
+
+
+class TestPitchQuestions:
+    """A pitch question composes grounded, cited talking points for the customer in view."""
+
+    def test_pitch_composes_grounded_talking_points(
+        self, graph: QaGraph, services: Services
+    ) -> None:
+        cid = _customer(services)
+        state = asyncio.run(graph.arun(_rm(services), cid, "prepare me a pitch for this customer"))
+        answer = state["answer"].lower()
+        assert state["refused"] is False
+        assert state["no_guidance"] is False
+        # The pitch grounds its figures in facts, so it carries resolvable citations.
+        assert state["fact_citations"], "a pitch cites the figures it states"
+        assert "recommended offers" in answer or "financial position" in answer
+
+    def test_what_to_tell_routes_to_the_pitch(self, graph: QaGraph, services: Services) -> None:
+        cid = _customer(services)
+        state = asyncio.run(graph.arun(_rm(services), cid, "what should I tell this customer"))
+        assert state["refused"] is False
+        assert state["fact_citations"]
+
+
 # ---------------------------------------------------------------- tool-call cap (task 9.1)
 
 

@@ -57,6 +57,7 @@ from c360.domain.enums import (
     ProbabilityConfidence,
     PropertyType,
     RelationshipType,
+    RiskBand,
 )
 from c360.domain.models import (
     Account,
@@ -83,6 +84,10 @@ from c360.domain.ports import (
     RelationshipRepository,
     RiskRepository,
 )
+
+#: Enums computed from a stored value rather than persisted in a column of their own, so they have
+#: no ``CHECK`` constraint to match. ``RiskBand`` is derived from ``risk_profile.risk_score``.
+_DERIVED_ENUMS: frozenset[type[StrEnum]] = frozenset({RiskBand})
 
 #: ``(table, column) -> enum``. Every ``CHECK (column IN (...))`` in the migrations appears here.
 ENUM_COLUMNS: dict[tuple[str, str], type[StrEnum]] = {
@@ -191,7 +196,11 @@ def test_the_mapping_covers_every_enum_in_the_module(schema_sql: dict[str, str])
         for value in vars(enums).values()
         if isinstance(value, type) and issubclass(value, StrEnum) and value is not StrEnum
     }
-    mapped = set(ENUM_COLUMNS.values())
+    # Derived enums are computed from a stored value, never persisted in a column of their own, so
+    # they have no CHECK constraint to match. RiskBand is bucketed from risk_profile.risk_score by
+    # the risk module; asserting it against a column would be asserting a constraint that (rightly)
+    # does not exist.
+    mapped = set(ENUM_COLUMNS.values()) | _DERIVED_ENUMS
     assert defined == mapped, f"unmapped enums: {sorted(e.__name__ for e in defined - mapped)}"
 
 
@@ -282,6 +291,10 @@ def test_every_model_carries_provenance() -> None:
         "CategoryTotal",
         "MonthlyTotal",
         "CustomerSearchHit",
+        # A cohort row is a book-level picker projection (id, name, coarse band/segment/value), not
+        # an observation of a customer, so it carries no provenance for the same reason
+        # CustomerSearchHit does not.
+        "CustomerCohortHit",
     }
     from c360.domain import models as models_module  # noqa: PLC0415
 

@@ -1,0 +1,85 @@
+{
+  "$comment": [
+    "Machine-readable deposit fee schedule (Phase 22 play 6, FEE_SCHEDULE_PATH).",
+    "",
+    "This file does not invent pricing. Every amount below is transcribed from the '## Rates and",
+    "Fees' table of the product sheet named in `rule_basis`, which lives in the knowledge corpus and",
+    "is the citable source a fee-recovery finding points at. The corpus stays the single source of",
+    "truth for humans; this file is the same rules in a form the detector can evaluate.",
+    "",
+    "All money is integer cents, per design 1.1 - a fee is never a float.",
+    "",
+    "Waiver keys, any one of which waives the cycle's maintenance fee:",
+    "  min_balance_cents              - the account's own balance at or above this",
+    "  min_monthly_credit_cents       - a qualifying recurring credit posted in the cycle",
+    "  min_relationship_balance_cents - the customer's deposits plus investments at or above this,",
+    "                                   the 'relationship balance' defined in pol-deposit-account",
+    "",
+    "Products with no maintenance fee (CD-12M, CD-36M) are deliberately absent: absence means",
+    "'nothing is billable here', so the detector raises no finding against them.",
+    "",
+    "The courtesy-waiver allowance the FEE_WAIVED detector uses is NOT stated numerically by any",
+    "corpus document - pol-fee-waiver-authority only requires supervisor review of repeated waivers.",
+    "It is therefore a configured threshold (FEE_RECOVERY_COURTESY_WAIVER_CYCLES), not a rule read",
+    "from the corpus, and the finding says so."
+  ],
+  "version": "v1",
+  "updated": "2026-09-16",
+  "unit": "integer_cents",
+  "products": {
+    "DDA-EVERYDAY": {
+      "doc_id": "pc-dda-everyday",
+      "rule_basis": "Everyday Checking - Product Sheet, Rates and Fees",
+      "maintenance_fee_cents": 800,
+      "waiver": {
+        "min_balance_cents": 150000,
+        "min_monthly_credit_cents": 50000
+      }
+    },
+    "DDA-PREMIER": {
+      "doc_id": "pc-dda-premier",
+      "rule_basis": "Premier Checking - Product Sheet, Rates and Fees",
+      "maintenance_fee_cents": 3000,
+      "waiver": {
+        "min_relationship_balance_cents": 2500000
+      }
+    },
+    "SAV-CORE": {
+      "doc_id": "pc-sav-core",
+      "rule_basis": "Core Savings - Product Sheet, Rates and Fees",
+      "maintenance_fee_cents": 500,
+      "waiver": {
+        "min_balance_cents": 30000
+      }
+    },
+    "SAV-HIYIELD": {
+      "doc_id": "pc-sav-hiyield",
+      "rule_basis": "High Yield Savings - Product Sheet, Rates and Fees",
+      "maintenance_fee_cents": 1000,
+      "waiver": {
+        "min_balance_cents": 1000000
+      }
+    },
+    "MMA-SELECT": {
+      "doc_id": "pc-mma-select",
+      "rule_basis": "Money Market Select - Product Sheet, Rates and Fees",
+      "maintenance_fee_cents": 1200,
+      "waiver": {
+        "min_balance_cents": 1000000
+      }
+    },
+    "BUS-CHK": {
+      "doc_id": "pc-bus-chk",
+      "rule_basis": "Business Operating Account - Product Sheet, Rates and Fees",
+      "maintenance_fee_cents": 2000,
+      "waiver": {
+        "min_balance_cents": 500000
+      },
+      "outgoing_wire_fee_cents": 2500
+    }
+  },
+  "waiver_policy": {
+    "doc_id": "pol-fee-waiver-authority",
+    "rule_basis": "Fee Waiver Authority Policy, Eligibility to Waive"
+  }
+}

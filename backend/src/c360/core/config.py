@@ -171,6 +171,24 @@ class Settings(BaseSettings):
     # than this is simply capped at the top of the value band rather than dominating the sum.
     signal_value_at_stake_cap_cents: PositiveInt = 100_000_000
 
+    # ------------------------------------------- fee recovery (Phase 22 play 6, §18)
+    # The machine-readable deposit fee schedule. Every amount in it is transcribed from a product
+    # sheet's "Rates and Fees" table in the knowledge corpus, so a finding cites the pricing
+    # document rather than this file. Shipped in the repo alongside the Bedrock price table.
+    fee_schedule_path: Path = Path("config/fee_schedule.json")
+    # How many consecutive courtesy waivers of the same fee are treated as acceptable service
+    # recovery before the pattern becomes a finding. No corpus document states a number —
+    # pol-fee-waiver-authority only requires supervisor review of repeated waivers — so this is a
+    # configured threshold and the finding says so rather than attributing it to the policy.
+    fee_recovery_courtesy_waiver_cycles: Annotated[int, Field(ge=0, le=24)] = 3
+    # A floor below which a finding is noise rather than an action: recovering a single $5
+    # maintenance fee is not worth an RM's attention, and a long tail of them would bury the real
+    # money. Integer cents (design §1.1).
+    fee_recovery_min_finding_cents: PositiveInt = 1_000
+    # How far back the scan looks. Twelve cycles is one annualizable year and matches the window the
+    # card's "recoverable per year" headline implies.
+    fee_recovery_lookback_months: Annotated[int, Field(ge=1, le=60)] = 12
+
     # ------------------------------------------- report exports (Phase 18, §18)
     # The bank name and a short tagline stamped on every generated report's cover. Branding is
     # per-report-definition too (task 18.1); these are the platform-wide defaults a definition
@@ -292,6 +310,10 @@ class Settings(BaseSettings):
     @property
     def cost_price_table(self) -> Path:
         return self.resolve(self.cost_price_table_path)
+
+    @property
+    def fee_schedule(self) -> Path:
+        return self.resolve(self.fee_schedule_path)
 
     @property
     def is_production_like(self) -> bool:

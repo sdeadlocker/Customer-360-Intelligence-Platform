@@ -72,6 +72,13 @@ _FACT_SIGNALS: tuple[str, ...] = (
     "connected",
     "portfolio",
     "holdings",
+    "customers",
+    "clients",
+    "cohort",
+    "pitch",
+    "talking point",
+    "delinquent",
+    "past due",
 )
 
 

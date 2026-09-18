@@ -102,6 +102,16 @@ ENV PATH="/opt/venv/bin:$PATH" \
     SQLITE_KNOWLEDGE_DB_PATH=/app/data/knowledge.db \
     SQLITE_AUDIT_DB_PATH=/data/audit.db \
     SQLITE_CHECKPOINT_DB_PATH=/data/checkpoints.db \
+    # The remaining configured paths are relative by default and resolve against the app's project
+    # root. Inside the image the source lives at /app/src/c360/..., so the root heuristic points at
+    # "/" rather than /app; set every remaining path absolutely so nothing resolves under "/".
+    # Read-only assets baked into the image at /app; writable feature stores under /data.
+    PROMPT_REGISTRY_PATH=/app/prompts \
+    COST_PRICE_TABLE_PATH=/app/config/bedrock_prices.json \
+    SQLITE_EVAL_DB_PATH=/data/eval.db \
+    SQLITE_SIGNALS_DB_PATH=/data/signals.db \
+    SQLITE_REPORTS_DB_PATH=/data/reports.db \
+    REPORTS_OUTPUT_DIR=/data/reports \
     API_HOST=0.0.0.0 \
     API_PORT=8000
 

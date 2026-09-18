@@ -81,6 +81,28 @@ def decode_passages(messages: Sequence[QaMessage]) -> list[dict[str, Any]]:
     return _decode(messages, _PASSAGES_MARKER)
 
 
+def decode_tool_data(messages: Sequence[QaMessage], tool_name: str) -> list[Any]:
+    """Every ``DATA:`` payload carried by a ``tool`` message from ``tool_name``, in order.
+
+    The mock renderer uses this to read a tool's structured ``data`` (a cohort's member list, a
+    pitch's sections) back out of the wire format, the same way :func:`decode_facts` reads the fact
+    block — so it can format that data without importing the tool result classes. Only the named
+    tool's messages are considered, so a cohort answer never picks up a search result's payload.
+    """
+    payloads: list[Any] = []
+    for message in messages:
+        if message.role != "tool" or message.name != tool_name or not message.content:
+            continue
+        if "DATA:\n" not in message.content:
+            continue
+        chunk = message.content.split("DATA:\n", 1)[1]
+        try:
+            payloads.append(json.loads(chunk))
+        except json.JSONDecodeError:
+            continue
+    return payloads
+
+
 def current_turn(messages: Sequence[QaMessage]) -> list[QaMessage]:
     """The messages belonging to the current question — everything from the last ``user`` on.
 
@@ -148,5 +170,6 @@ __all__ = [
     "current_turn",
     "decode_facts",
     "decode_passages",
+    "decode_tool_data",
     "encode_tool_result",
 ]

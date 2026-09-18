@@ -37,8 +37,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from c360.domain.enums import (
     AccountStatus,
     AccountType,
+    CustomerSegment,
+    CustomerValue,
     EngagementChannel,
     EngagementEventType,
+    RiskBand,
 )
 from c360.domain.models import (
     ContactInfo,
@@ -111,6 +114,46 @@ class CustomerSearchArgs(BaseModel):
         ),
     )
     limit: int = Field(default=10, ge=1, le=25, description="Maximum matching customers to return.")
+
+
+class CustomerCohortArgs(BaseModel):
+    """Arguments for the book-level cohort tool (cross-customer Q&A, "high risk customers").
+
+    Like :class:`CustomerSearchArgs` this is *not* keyed on a single customer: it describes a set.
+    Every filter is optional, so "high risk customers", "my platinum clients" and "small-business
+    customers past due" are all one tool with a different filter combination. The scope the query
+    runs under is the principal's entitlement, applied in SQL — a caller cannot widen their book
+    through this tool.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    risk_band: RiskBand | None = Field(
+        default=None,
+        description="Restrict to exactly this risk band: LOW, MODERATE, ELEVATED or HIGH.",
+    )
+    min_risk_band: RiskBand | None = Field(
+        default=None,
+        description=(
+            "Restrict to this risk band or higher, e.g. min_risk_band=ELEVATED returns the "
+            "ELEVATED and HIGH customers. Use for 'high risk' / 'riskiest' cohort questions, "
+            "which mean the top of the risk distribution rather than one exact band."
+        ),
+    )
+    segments: tuple[CustomerSegment, ...] | None = Field(
+        default=None, description="Restrict to these customer segments."
+    )
+    values: tuple[CustomerValue, ...] | None = Field(
+        default=None, description="Restrict to these customer value tiers."
+    )
+    delinquent_only: bool = Field(
+        default=False, description="Restrict to customers who are past due (not CURRENT)."
+    )
+    limit: int = Field(default=20, ge=1, le=100, description="Maximum customers to return.")
+
+
+class PitchArgs(CustomerArgs):
+    """Arguments for the pitch / talking-points tool for a single customer."""
 
 
 class HoldingsArgs(CustomerArgs):
@@ -264,6 +307,194 @@ def _customer_search(context: ToolContext, args: CustomerSearchArgs) -> ToolResu
         for hit in page.items
     ]
     return ToolResult(entity_id="", data={"matches": matches, "count": len(matches)})
+
+
+def _customer_cohort(context: ToolContext, args: CustomerCohortArgs) -> ToolResult:
+    """List the entitled book by a cohort criterion (cross-customer Q&A, "high risk customers").
+
+    The book-level counterpart to :func:`_customer_search`: where search resolves a *named*
+    customer, this answers a question about a *set* — a risk band, a segment, a value tier, or who
+    is past due. Like search it is not keyed on a customer id and does not call
+    :meth:`ToolContext.authorize`; instead it hands the principal's entitlement to
+    :meth:`CustomerService.cohort`, which scopes the query in SQL so a restricted book only ever
+    surfaces its own customers (requirement 3.3). The
+    rows carry only coarse, non-maskable columns (id, name, segment, value tier, the derived risk
+    band and delinquency status) — a picker into the reading tools, not citable financial data — so
+    no facts are built here, exactly as for the resolver. The band label is the same LOW/MODERATE/
+    ELEVATED/HIGH banding the risk module derives.
+    """
+    hits = context.services.customer.cohort(
+        context.principal.entitlement,
+        risk_band=args.risk_band,
+        min_risk_band=args.min_risk_band,
+        segments=args.segments,
+        values=args.values,
+        delinquent_only=args.delinquent_only,
+        limit=args.limit,
+    )
+    members = [
+        {
+            "customer_id": hit.customer_id,
+            "customer_name": hit.customer_name,
+            "customer_segment": str(hit.customer_segment),
+            "customer_value": str(hit.customer_value),
+            "risk_band": hit.risk_band,
+            "delinquency_status": (
+                str(hit.delinquency_status) if hit.delinquency_status is not None else None
+            ),
+        }
+        for hit in hits
+    ]
+    criterion = _cohort_criterion(args)
+    return ToolResult(
+        entity_id="",
+        data={"members": members, "count": len(members), "criterion": criterion},
+    )
+
+
+def _cohort_criterion(args: CustomerCohortArgs) -> str:
+    """A short, value-free label describing the cohort filter, for the answer's framing."""
+    parts: list[str] = []
+    if args.risk_band is not None:
+        parts.append(f"{str(args.risk_band).lower()} risk")
+    elif args.min_risk_band is not None:
+        parts.append(f"{str(args.min_risk_band).lower()} risk or higher")
+    if args.delinquent_only:
+        parts.append("past due")
+    if args.segments:
+        parts.append("/".join(str(segment) for segment in args.segments))
+    if args.values:
+        parts.append("/".join(str(value) for value in args.values))
+    return " ".join(parts) if parts else "all customers"
+
+
+def _pitch(context: ToolContext, args: PitchArgs) -> ToolResult:
+    """Compose a grounded set of talking points for a single customer (the "prepare a pitch" ask).
+
+    Not a new read: it composes the *same* offer, financial and risk service calls the individual
+    tools use, into one structured briefing a relationship manager can open a conversation from. The
+    masking discipline is unchanged — every figure runs through :meth:`ToolContext.mask` before it
+    becomes a fact, so a role that cannot see an expected offer value or a balance never gets it in
+    a talking point. The recommended offers and their rationale, the headline financial position,
+    and the severity-ordered risk alerts (compliance first, value-free labels) are the three
+    sections; a live model narrates them into prose, the mock lists them, both citing the same
+    facts.
+    """
+    context.authorize(args.customer_id)
+    builder = FactTable.builder()
+    masked_fields: list[str] = []
+
+    offers_section, offer_masked = _pitch_offers(context, args.customer_id, builder)
+    masked_fields.extend(offer_masked)
+    financial_section, fin_masked = _pitch_financials(context, args.customer_id, builder)
+    masked_fields.extend(fin_masked)
+    risk_section = _pitch_risk(context, args.customer_id, builder)
+
+    data: dict[str, Any] = {
+        "offers": offers_section,
+        "financial": financial_section,
+        "risk": risk_section,
+    }
+    return ToolResult(
+        entity_id=args.customer_id,
+        data=data,
+        facts=builder.build(),
+        masked_fields=tuple(dict.fromkeys(masked_fields)),
+    )
+
+
+def _pitch_offers(
+    context: ToolContext, customer_id: str, builder: FactTableBuilder
+) -> tuple[dict[str, Any], list[str]]:
+    """The pitch's offer section: the ranked live offers, with expected value cited only if visible.
+
+    Mirrors :func:`_offers`' masking discipline exactly — the expected value is an OFFERS-group
+    maskable field, so each offer's :class:`CustomerOffer` is masked and the value is cited only
+    when the serializer kept it for this role.
+    """
+    ranked = context.services.offer.get_offers(customer_id)
+    live = [item for item in ranked.offers if not item.suppressed]
+    offers = [
+        {
+            "offer_id": item.offer.offer.offer_id,
+            "offer_name": item.offer.offer.offer_name,
+            "rank": item.rank,
+            "is_cross_sell": item.is_cross_sell,
+            "is_upsell": item.is_upsell,
+            "rationale": item.rationale,
+        }
+        for item in live
+    ]
+    masked_fields: list[str] = []
+    for item in live:
+        offer_data, paths = context.mask(item.offer.customer_offer)
+        masked_fields.extend(paths)
+        if isinstance(offer_data, dict) and "expected_value_cents" in offer_data:
+            builder.add(
+                entity_type="offer",
+                entity_id=item.offer.offer.offer_id,
+                field="expected_value_cents",
+                value=offer_data["expected_value_cents"],
+                as_of=item.offer.as_of_date.isoformat(),
+                source_system=item.offer.source_system,
+            )
+    return {"recommended": offers}, masked_fields
+
+
+def _pitch_financials(
+    context: ToolContext, customer_id: str, builder: FactTableBuilder
+) -> tuple[dict[str, Any], list[str]]:
+    """The pitch's financial headline, masked exactly as :func:`_financial_profile` does."""
+    profile = context.services.financial.get_financial_profile(customer_id)
+    if profile is None:
+        return {}, []
+    data, masked_fields = context.mask(_FinancialProfileResponse(financial_profile=profile))
+    _facts_from_masked(
+        builder,
+        _nested(data, "financial_profile"),
+        entity_type="financial_profile",
+        entity_id=customer_id,
+        fields=(
+            "net_worth_cents",
+            "total_deposits_cents",
+            "total_loans_cents",
+            "monthly_income_cents",
+        ),
+        as_of=profile.as_of_date.isoformat(),
+        source_system=profile.source_system,
+    )
+    return _nested(data, "financial_profile") or {}, list(masked_fields)
+
+
+def _pitch_risk(
+    context: ToolContext, customer_id: str, builder: FactTableBuilder
+) -> dict[str, Any]:
+    """The pitch's risk section: band, compliance flag and the value-free, severity-ordered alerts.
+
+    The band and the compliance flag are non-maskable and always citable, exactly as in
+    :func:`_risk_profile`; the alert details are already value-free labels the risk service
+    produced, safe to surface in a talking point.
+    """
+    view = context.services.risk.get_risk(customer_id)
+    if view is None:
+        return {}
+    builder.add(
+        entity_type="risk_profile",
+        entity_id=customer_id,
+        field="band",
+        value=str(view.band),
+        as_of=view.profile.as_of_date.isoformat(),
+        source_system=view.profile.source_system,
+    )
+    alerts = [
+        {"category": alert.category, "detail": alert.detail, "dismissible": alert.dismissible}
+        for alert in view.alerts
+    ]
+    return {
+        "band": str(view.band),
+        "requires_compliance_indicator": view.requires_compliance_indicator,
+        "alerts": alerts,
+    }
 
 
 def _profile(context: ToolContext, args: CustomerArgs) -> ToolResult:
@@ -771,6 +1002,26 @@ CUSTOMER_TOOL_SPECS: tuple[ToolSpec[Any, ToolResult], ...] = (
         CustomerSearchArgs,
         _customer_search,
     ),
+    _spec(
+        "customer_cohort",
+        (
+            "List customers across the entitled book by a cohort criterion. ALWAYS use this tool "
+            "for any question about a *group* of customers ('high risk customers', 'my platinum "
+            "clients', 'who is past due') rather than one named customer — never answer such a "
+            "question from memory. For 'high risk' or 'the riskiest' customers, pass "
+            "min_risk_band=ELEVATED (the band and above) rather than risk_band=HIGH, because 'high "
+            "risk' colloquially means the top of the distribution and an exact top band may be "
+            "empty. Use risk_band only when the user names an exact band (e.g. 'moderate risk "
+            "customers'). Also filters by segment, value tier and delinquency (delinquent_only). "
+            "When NO filter is given the results are ranked by customer value (highest-value "
+            "first), so use this tool with no filters for 'who is my most valuable / highest-value "
+            "customer', 'which customer can give the most profit', or 'who should I pitch / who "
+            "has the best opportunity' — it returns the book ranked by value. Returns display-only "
+            "ranked members (id, name, segment, value, risk band, delinquency), entitlement-scoped."
+        ),
+        CustomerCohortArgs,
+        _customer_cohort,
+    ),
     _spec("profile", "Customer profile and headline attributes.", CustomerArgs, _profile),
     _spec("contact", "Customer contact information (masked per role).", CustomerArgs, _contact),
     _spec("holdings", "All accounts and product holdings.", HoldingsArgs, _holdings),
@@ -800,6 +1051,20 @@ CUSTOMER_TOOL_SPECS: tuple[ToolSpec[Any, ToolResult], ...] = (
         _transactions_query,
     ),
     _spec("offers", "Ranked offers with rationale and suppression status.", CustomerArgs, _offers),
+    _spec(
+        "pitch",
+        (
+            "ALWAYS call this tool when asked to prepare a pitch, prepare talking points, or 'what "
+            "should I tell / what do I say to' a customer — never compose such a briefing from "
+            "memory. It returns the grounded material to build the pitch from: the recommended "
+            "offers with rationale, the headline financial position, and the risk and compliance "
+            "flags, composed from the offer, financial and risk reads, masked per role and cited "
+            "to the record. Narrate the returned sections into talking points; cite every figure "
+            "by its [F] id."
+        ),
+        PitchArgs,
+        _pitch,
+    ),
     _spec("life_events", "Detected and recorded life events.", LifeEventsArgs, _life_events),
     _spec("journey_timeline", "Merged customer timeline.", CustomerArgs, _journey_timeline),
     _spec("household", "Household membership and rollups.", CustomerArgs, _household),

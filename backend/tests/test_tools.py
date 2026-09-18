@@ -21,7 +21,8 @@ from sqlalchemy import Engine
 from c360.api.services import Services
 from c360.core.config import Settings
 from c360.data.repositories import build_repositories
-from c360.security.entitlement import BookScope
+from c360.domain.enums import CustomerSegment, RiskBand
+from c360.security.entitlement import BookScope, SegmentScope
 from c360.security.errors import EntitlementError
 from c360.security.model import Principal, Role
 from c360.security.serializer import mask_model
@@ -281,6 +282,11 @@ class TestToolsOverServices:
             # Phase 9 (task 9.6): the cross-customer resolver — how the search-landing Ask AI path
             # finds which customer a question is about before reading their details.
             "customer_search",
+            # Book-level cohort listing and the pitch composer (cross-customer Q&A + "prepare a
+            # pitch"): the two tools that let Ask AI answer questions about a *set* of customers and
+            # assemble grounded talking points, not just single-customer reads.
+            "customer_cohort",
+            "pitch",
             "profile",
             "contact",
             "holdings",
@@ -517,6 +523,207 @@ class TestSchemaExport:
         # holdings has an enum arg (AccountType) Pydantic factors into $defs; it must be inlined.
         holdings = next(s for s in tool_schemas(registry) if s["function"]["name"] == "holdings")
         assert "$defs" not in holdings["function"]["parameters"]
+
+
+# ==================================================================== customer_cohort (book-level)
+
+
+class TestCustomerCohortTool:
+    """The book-level cohort tool: filter/rank the entitled book, scoped in SQL, no figures out."""
+
+    def test_cohort_returns_display_only_members_and_no_facts(
+        self, services: Services, registry: ToolRegistry, phase5_engine: Engine
+    ) -> None:
+        """A cohort answer is a picker list — display fields only, no citable financial facts."""
+        context = _context(services, principal_for(Role.RM))
+
+        result = _run(registry, "customer_cohort", context, {"limit": 5})
+
+        data = _data_dict(result)
+        members = data["members"]
+        assert isinstance(members, list)
+        assert data["count"] == len(members)
+        for member in members:
+            assert set(member) == {
+                "customer_id",
+                "customer_name",
+                "customer_segment",
+                "customer_value",
+                "risk_band",
+                "delinquency_status",
+            }
+        # No raw balances ride the cohort path, so it carries no citable facts.
+        assert result.facts.facts == ()
+        # It is not about one customer.
+        assert result.entity_id == ""
+
+    def test_cohort_is_scoped_to_the_entitled_book(
+        self, services: Services, registry: ToolRegistry, phase5_engine: Engine
+    ) -> None:
+        """A restricted book never surfaces a customer outside it (requirement 3.3, 12.3)."""
+        ids = all_customer_ids(phase5_engine)
+        outside_id = ids[-1]
+        # A book of only the first customer: no query, however broad, may reach the last one.
+        principal = principal_for(Role.RM, BookScope(customer_ids=frozenset(ids[:1])))
+        context = _context(services, principal)
+
+        result = _run(registry, "customer_cohort", context, {"limit": 100})
+
+        members = _data_dict(result)["members"]
+        assert all(member["customer_id"] != outside_id for member in members)
+        assert all(member["customer_id"] == ids[0] for member in members)
+
+    def test_cohort_min_risk_band_returns_only_that_band_or_higher(
+        self, services: Services, registry: ToolRegistry, phase5_engine: Engine
+    ) -> None:
+        """``min_risk_band=ELEVATED`` returns the ELEVATED and HIGH customers only."""
+        context = _context(services, principal_for(Role.RM))
+
+        result = _run(
+            registry,
+            "customer_cohort",
+            context,
+            {"min_risk_band": RiskBand.ELEVATED.value, "limit": 100},
+        )
+
+        members = _data_dict(result)["members"]
+        assert members, "the seeded book has ELEVATED-band customers"
+        for member in members:
+            assert member["risk_band"] in {"ELEVATED", "HIGH"}
+
+    def test_cohort_delinquent_only_returns_past_due_customers(
+        self, services: Services, registry: ToolRegistry, phase5_engine: Engine
+    ) -> None:
+        context = _context(services, principal_for(Role.RM))
+
+        result = _run(registry, "customer_cohort", context, {"delinquent_only": True, "limit": 100})
+
+        members = _data_dict(result)["members"]
+        assert members, "the seeded book has delinquent customers"
+        for member in members:
+            assert member["delinquency_status"] not in (None, "CURRENT")
+
+    def test_cohort_segment_filter_restricts_to_named_segment(
+        self, services: Services, registry: ToolRegistry, phase5_engine: Engine
+    ) -> None:
+        context = _context(services, principal_for(Role.RM))
+
+        result = _run(
+            registry,
+            "customer_cohort",
+            context,
+            {"segments": [CustomerSegment.AFFLUENT.value], "limit": 100},
+        )
+
+        members = _data_dict(result)["members"]
+        assert members, "the seeded book has AFFLUENT customers"
+        for member in members:
+            assert member["customer_segment"] == "AFFLUENT"
+
+    def test_cohort_respects_a_marketing_segment_scope(
+        self, services: Services, registry: ToolRegistry, phase5_engine: Engine
+    ) -> None:
+        """A SEGMENT-scoped principal only ever sees customers in its allowed segments."""
+        allowed = frozenset({CustomerSegment.MASS, CustomerSegment.AFFLUENT})
+        principal = principal_for(Role.MARKETING, SegmentScope(segments=allowed))
+        context = _context(services, principal)
+
+        result = _run(registry, "customer_cohort", context, {"limit": 100})
+
+        members = _data_dict(result)["members"]
+        assert members
+        for member in members:
+            assert member["customer_segment"] in {"MASS", "AFFLUENT"}
+
+
+# ==================================================================== pitch (talking points)
+
+
+class TestPitchTool:
+    """The pitch tool: compose offers + financials + risk, masked per role, figures cited."""
+
+    def test_pitch_composes_the_three_sections(
+        self, services: Services, registry: ToolRegistry, phase5_engine: Engine
+    ) -> None:
+        customer_id = _first_customer(phase5_engine)
+        context = _context(services, principal_for(Role.RM))
+
+        result = _run(registry, "pitch", context, {"customer_id": customer_id})
+
+        data = _data_dict(result)
+        assert set(data) == {"offers", "financial", "risk"}
+        assert result.entity_id == customer_id
+
+    def test_pitch_authorizes_the_customer(self, services: Services, phase5_engine: Engine) -> None:
+        """The pitch runs the same 403/404 gate every read does (requirement 11.6)."""
+        ids = all_customer_ids(phase5_engine)
+        target = ids[-1]
+        principal = principal_for(Role.RM, BookScope(customer_ids=frozenset(ids[:1])))
+        registry = build_tool_registry()
+        context = _context(services, principal)
+
+        with pytest.raises(EntitlementError):
+            registry.execute("pitch", context, {"customer_id": target})
+
+    def test_pitch_money_facts_stay_integer_cents(
+        self, services: Services, registry: ToolRegistry, phase5_engine: Engine
+    ) -> None:
+        customer_id = _first_customer(phase5_engine)
+        context = _context(services, principal_for(Role.RM))
+
+        result = _run(registry, "pitch", context, {"customer_id": customer_id})
+
+        for fact in result.facts.facts:
+            if fact.field.endswith("_cents"):
+                assert isinstance(fact.value, int)
+
+    def test_pitch_does_not_leak_a_masked_balance_into_a_fact_for_marketing(
+        self, services: Services, registry: ToolRegistry, phase5_engine: Engine
+    ) -> None:
+        """A balance Marketing cannot see (BALANCES group) must not reach a fact as a raw integer.
+
+        Offer expected value is an OFFERS-group field Marketing *can* see, so it is not asserted on
+        here; the invariant is that the pitch masks exactly as the underlying tools do, which the
+        parity check below pins down. This test guards the balance specifically.
+        """
+        customer_id = _first_customer(phase5_engine)
+        context = _context(services, principal_for(Role.MARKETING))
+
+        result = _run(registry, "pitch", context, {"customer_id": customer_id})
+
+        for fact in result.facts.facts:
+            if fact.field == "net_worth_cents":
+                assert (
+                    not isinstance(fact.value, int) or fact.value == 0
+                ), "a masked balance must not reach a fact as a raw integer"
+
+    def test_pitch_masks_financials_exactly_like_the_financial_profile_tool(
+        self, services: Services, registry: ToolRegistry, phase5_engine: Engine
+    ) -> None:
+        """The pitch's financial facts match what the standalone financial_profile tool would cite.
+
+        This pins the parity that lets the masking-specific assertions above stay narrow: the pitch
+        does not re-decide masking, it reuses the same serializer path, so a role sees the same
+        financial figures cited from a pitch as from the dedicated tool.
+        """
+        customer_id = _first_customer(phase5_engine)
+        context = _context(services, principal_for(Role.MARKETING))
+
+        pitch = _run(registry, "pitch", context, {"customer_id": customer_id})
+        financial = _run(registry, "financial_profile", context, {"customer_id": customer_id})
+
+        pitch_fin = {
+            (f.field, f.value) for f in pitch.facts.facts if f.entity_type == "financial_profile"
+        }
+        financial_fin = {
+            (f.field, f.value)
+            for f in financial.facts.facts
+            if f.entity_type == "financial_profile"
+        }
+        assert pitch_fin, "the pitch cites financial figures"
+        # Every financial figure the pitch cites is one the dedicated tool cites identically —
+        # same value, same masking — so the pitch introduces no divergent view.
+        assert pitch_fin <= financial_fin
 
 
 # ==================================================================== helpers

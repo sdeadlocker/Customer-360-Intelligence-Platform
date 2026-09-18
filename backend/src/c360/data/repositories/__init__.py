@@ -28,6 +28,7 @@ from c360.data.repositories.base import (
     to_models,
 )
 from c360.data.repositories.customer import SqliteCustomerRepository
+from c360.data.repositories.fee_recovery import SqliteFeeRecoveryRepository
 from c360.data.repositories.financial import SqliteFinancialRepository
 from c360.data.repositories.graph import SqliteGraphRepository
 from c360.data.repositories.journey import SqliteJourneyRepository
@@ -41,7 +42,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class Repositories:
-    """The six adapters over one engine.
+    """The adapters over one engine.
 
     Typed as the concrete classes rather than as the protocols so that ``mypy`` verifies conformance
     at the point of construction: if an adapter drifts from its port, the assignment in
@@ -56,6 +57,7 @@ class Repositories:
     offer: SqliteOfferRepository
     journey: SqliteJourneyRepository
     graph: SqliteGraphRepository
+    fee_recovery: SqliteFeeRecoveryRepository
 
 
 def build_repositories(engine: Engine, *, metrics: QueryMetrics | None = None) -> Repositories:
@@ -68,6 +70,7 @@ def build_repositories(engine: Engine, *, metrics: QueryMetrics | None = None) -
         offer=SqliteOfferRepository(engine, metrics=metrics),
         journey=SqliteJourneyRepository(engine, metrics=metrics),
         graph=SqliteGraphRepository(engine, metrics=metrics),
+        fee_recovery=SqliteFeeRecoveryRepository(engine, metrics=metrics),
     )
 
 
@@ -77,6 +80,7 @@ __all__ = [
     "Repositories",
     "RepositoryError",
     "SqliteCustomerRepository",
+    "SqliteFeeRecoveryRepository",
     "SqliteFinancialRepository",
     "SqliteGraphRepository",
     "SqliteJourneyRepository",

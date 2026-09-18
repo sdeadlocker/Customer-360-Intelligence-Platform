@@ -584,6 +584,155 @@ that a prompt or model change cannot silently degrade what a relationship manage
 
 ---
 
+## 19a. Revenue Intelligence
+
+**User story:** As a relationship manager or a regional head, I want every opportunity the platform
+can see turned into a *priced* number I can act on — money the bank is leaving on the table — so that
+my day is spent on what moves revenue rather than on reading dashboards.
+
+These capabilities were added after the original success criteria (Phase 22). They extend the
+deterministic layer: each figure is computed in integer cents from the customer database, and each
+finding cites the record or the policy document it rests on. Four plays are defined; play 6 (fee
+recovery) is delivered end to end, and plays 4, 5 and 8 exist as UI presenting a defined contract,
+falling back to a clearly-labelled illustrative preview until their detection backends are built.
+
+### Acceptance criteria
+
+1. WHEN the landing page loads THEN the system SHALL present a revenue "opportunity pipeline" summary
+   across the caller's entitled book — total identified, realistically capturable, realized, and the
+   realization rate — entitlement-scoped so a restricted book sees only its own opportunities.
+2. WHEN fee recovery is computed for a customer THEN the system SHALL identify deposit charges the
+   bank was entitled to but did not collect — a fee never posted despite the cycle not qualifying for
+   a waiver, a fee reversed beyond the courtesy allowance, a fee billed below the current schedule,
+   and a billable service left unbilled — and SHALL price each in integer cents.
+3. WHEN a fee-recovery finding is presented THEN the system SHALL cite the product sheet or policy
+   document its amount is measured against, and SHALL state the evidence that established it,
+   including which balance basis was used where the source data cannot supply a historical balance.
+4. WHEN the evidence for a recoverable charge is ambiguous THEN the system SHALL decline to raise a
+   finding rather than assert one, because presenting a bank with fees it was not entitled to is a
+   worse error than a missed recovery.
+5. WHEN a role sees banded rather than exact balances THEN the system SHALL band recoverable amounts
+   in the same way, and SHALL never place an account's full number in a finding.
+6. WHEN a fee-recovery scan is run THEN the system SHALL write an immutable audit record of the read,
+   recording the kinds of finding surfaced but no monetary value (per §18 telemetry rules).
+7. WHEN a revenue play's detection backend is not yet available THEN the system SHALL present its
+   panel with clearly-labelled illustrative figures behind a visible "preview" marker, and SHALL
+   NOT present an ungrounded figure as if it were grounded customer data.
+8. WHEN money-in-motion, held-away assets, or economic profit are surfaced THEN the system SHALL do so
+   as priced opportunities with a dollar target and, where inferred, a confidence and the observed
+   basis — never as an unqualified assertion. *(Backends for these three are scoped, not yet built.)*
+
+---
+
+## 19b. Conversational Voice Assistant
+
+**User story:** As a relationship manager, I want to speak my question and hear the answer, with a
+friendly assistant presence, so that using the platform feels like talking to a colleague rather than
+filling in a form.
+
+These capabilities were added in Phase 23. They are a presentation layer over the existing grounded
+Q&A: voice input only ever produces text that flows through the same claim-validated, entitlement-
+scoped pipeline a typed question does, so no grounding, masking or entitlement guarantee is affected.
+
+### Acceptance criteria
+
+1. WHEN the browser supports speech recognition THEN the system SHALL offer a microphone control that
+   transcribes a spoken question into the Ask composer, and SHALL show the transcript as it is spoken.
+2. WHEN speech recognition is unavailable in the browser THEN the system SHALL hide the microphone
+   affordance rather than present a broken control, and the typed experience SHALL be unaffected.
+3. WHEN voice input is offered THEN the system SHALL make it opt-in (nothing listens until the user
+   activates the microphone) and SHALL disclose that browser transcription may send audio to the
+   browser's provider, because a spoken banking question can contain personally identifying data.
+4. WHEN spoken replies are enabled THEN the system SHALL read a completed answer aloud, SHALL default
+   this off, SHALL persist the user's choice, and SHALL never speak a refused answer or mid-stream
+   partial.
+5. WHEN the assistant is present THEN the system SHALL show an assistant avatar whose state reflects
+   what it is actually doing — idle, listening, thinking, or speaking — and whose speaking motion is
+   driven by the same synthesized speech the user hears, so the avatar never implies a live capability
+   the platform does not have.
+6. WHEN an assistant avatar image is supplied THEN the system SHALL use it, and SHALL otherwise fall
+   back to an illustrated portrait, with no code change required to swap between them.
+7. WHEN the assistant receives a greeting, a thanks, or a "what can you do" question THEN it SHALL
+   respond conversationally and describe its capabilities, rather than treating the message as a
+   customer lookup.
+8. WHEN any voice or avatar animation is shown THEN it SHALL be suppressed under the user's
+   reduced-motion preference, and the meaning SHALL remain carried by the answer text and status.
+
+---
+
+## 19c. Cohort and Pitch Questions in Ask AI
+
+**User story:** As a relationship manager, I want to ask about a *group* of customers ("who are my
+high-risk customers", "which clients are past due") and to ask the assistant to "prepare a pitch" or
+tell me "what to say" to a customer, so that Ask AI answers the questions I actually have, not only
+single-fact lookups.
+
+These capabilities were added in Phase 24. They are two new tools on the same claim-validated,
+entitlement-scoped Q&A pipeline the typed and spoken questions already use: nothing bypasses masking,
+grounding or entitlement. Book-level questions were previously answered "no matching customer was
+found" because the only cross-customer tool was a name resolver; these criteria close that gap.
+
+### Acceptance criteria
+
+1. WHEN a question is about a set of customers by a criterion — a risk band, a segment, a value tier,
+   or whether they are past due — THEN the system SHALL list the matching customers from the caller's
+   entitled book, ranked, rather than attempting to resolve a single named customer.
+2. WHEN a cohort question is answered THEN the result SHALL be entitlement-scoped inside the query, so
+   a restricted book never surfaces a customer outside it and the count never reveals an out-of-book
+   customer (requirement 3.3).
+3. WHEN a cohort is listed THEN each member SHALL carry only display-only, non-maskable attributes
+   (identifier, name, segment, value tier, the derived risk band, delinquency status) — never a raw
+   balance — because a cohort list is a picker into the reading tools, not citable financial data.
+4. WHEN "high risk" or "the riskiest" customers are asked for THEN the system SHALL interpret that as
+   the top of the risk distribution (the band and above), not one exact band, so a legitimately empty
+   top band does not read as a broken feature.
+5. WHEN the user asks to prepare a pitch, for talking points, or what to tell a customer THEN the
+   system SHALL compose one grounded briefing from that customer's recommended offers, headline
+   financial position, and risk and compliance flags.
+6. WHEN a pitch is composed THEN every figure in it SHALL be masked per the caller's role exactly as
+   the underlying offer, financial and risk reads are, and SHALL be cited to the record — a role that
+   cannot see a balance or an offer's expected value never receives it in a talking point.
+7. WHEN either capability runs on the universal Ask surface or within a single customer's dashboard
+   THEN it SHALL behave identically, because both surfaces share one Q&A graph and tool registry.
+
+---
+
+## 19d. Conversational Refinement, Live Generation and Ask AI Presentation
+
+**User story:** As a relationship manager, I want Ask AI to feel like a real conversation — I refine
+my last question, I ask "who can give me the most profit", I read a natural-language answer in a
+proper chat window, and when the model is live it narrates rather than dumping fields.
+
+These capabilities were added in Phase 25, refining Phase 24. They are conversational, presentation
+and provider changes over the same claim-validated, entitlement-scoped pipeline: no grounding,
+masking or entitlement guarantee is affected, and no REST surface is added.
+
+### Acceptance criteria
+
+1. WHEN a follow-up refines a cohort already established in the conversation ("only high risk", "just
+   the platinum ones", "who of those is past due") THEN the system SHALL continue that cohort rather
+   than treat the refinement as a customer-name lookup.
+2. WHEN a question asks for the most valuable / most profitable customers, or who to pitch, without a
+   named filter THEN the system SHALL return the entitled book ranked by customer value, rather than
+   answering "no supporting guidance".
+3. WHEN a risk question names no explicit band ("rising risk", "customers at risk") THEN the system
+   SHALL interpret it as the riskiest cohort (the elevated band and above), rather than listing the
+   whole book unfiltered.
+4. WHEN a grounded answer must fall back to the deterministic template (live generation unavailable,
+   or the model's prose failed claim validation) THEN the fallback SHALL be human-readable — money
+   as dollars with a labelled field — while still citing every figure by its source id, rather than a
+   raw ``field_cents: 12345`` dump.
+5. WHEN live generation is configured THEN the system SHALL use Amazon Bedrock (a Claude model, via a
+   cross-region inference profile where required) for narration, and SHALL fall back to the
+   deterministic provider without failing the request when Bedrock is unavailable.
+6. WHEN a conversation has one or more turns THEN the Ask panel SHALL present a scrolling chat thread
+   that keeps the latest message in view, SHALL let the user send further messages in the same
+   thread, and SHALL offer a collapse control that closes the panel back to its launcher.
+7. WHEN an answer contains light markdown emphasis (``**bold**``) THEN the UI SHALL render it as
+   emphasis rather than showing the literal characters, and SHALL preserve the answer's line breaks.
+
+---
+
 ## 20. Assumptions
 
 These were not stated in the source spec. They are the working assumptions for design unless corrected.
@@ -659,3 +808,7 @@ All decisions are confirmed by the stakeholder. Design proceeds on these; see `d
 | Knowledge retrieval (RAG) | §17 |
 | Observability | §18 |
 | Agent evaluation | §19 |
+| Revenue intelligence (post-criteria, Phase 22) | §19a |
+| Conversational voice assistant (Phase 23) | §19b |
+| Cohort and pitch questions in Ask AI (Phase 24) | §19c |
+| Conversational refinement, live generation, Ask AI presentation (Phase 25) | §19d |

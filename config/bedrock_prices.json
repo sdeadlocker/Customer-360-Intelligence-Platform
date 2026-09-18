@@ -18,6 +18,14 @@
       "input": 800,
       "output": 4000
     },
+    "us.anthropic.claude-haiku-4-5-20251001-v1:0": {
+      "input": 1000,
+      "output": 5000
+    },
+    "anthropic.claude-haiku-4-5-20251001-v1:0": {
+      "input": 1000,
+      "output": 5000
+    },
     "amazon.titan-embed-text-v2:0": {
       "input": 20,
       "output": 0

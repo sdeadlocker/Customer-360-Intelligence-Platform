@@ -84,6 +84,21 @@ class InvestmentRiskProfile(StrEnum):
 
 
 # ---------------------------------------------------------------- risk
+class RiskBand(StrEnum):
+    """A coarse bucket for the risk score, for callers that see the band but not the number.
+
+    Lives here in the domain rather than in the risk service because it is a shared vocabulary term:
+    the risk module derives it, the signal detectors branch on it, and the cross-customer cohort
+    query filters by it. The score-to-band cut points stay in :mod:`c360.services.risk`, which is
+    the one module that owns the numeric policy.
+    """
+
+    LOW = "LOW"
+    MODERATE = "MODERATE"
+    ELEVATED = "ELEVATED"
+    HIGH = "HIGH"
+
+
 class DelinquencyStatus(StrEnum):
     CURRENT = "CURRENT"
     DPD_1_29 = "DPD_1_29"

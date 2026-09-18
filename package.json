@@ -33,6 +33,10 @@
     "dev:api:noreload": "node scripts/backend.mjs -m uvicorn c360.main:create_app --factory --host 127.0.0.1 --port 8000",
     "dev:web": "npm --prefix frontend run dev",
 
+    "openapi:export": "node scripts/backend.mjs scripts/export_openapi.py",
+    "openapi:sync": "npm run openapi:export && npm --prefix frontend run codegen",
+
+
     "obs:up": "docker compose -f docker/docker-compose.yml up -d",
     "obs:down": "docker compose -f docker/docker-compose.yml down"
   }

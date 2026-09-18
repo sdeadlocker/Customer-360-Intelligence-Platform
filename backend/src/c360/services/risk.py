@@ -23,24 +23,15 @@ obligation outranks a delinquency.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import IntEnum, StrEnum
+from enum import IntEnum
 from typing import TYPE_CHECKING
 
-from c360.domain.enums import DelinquencyStatus
+from c360.domain.enums import DelinquencyStatus, RiskBand
 from c360.domain.money import Cents
 
 if TYPE_CHECKING:
     from c360.data.repositories.risk import SqliteRiskRepository
     from c360.domain.models import RiskProfile
-
-
-class RiskBand(StrEnum):
-    """A coarse bucket for the risk score, for callers that see the band but not the number."""
-
-    LOW = "LOW"
-    MODERATE = "MODERATE"
-    ELEVATED = "ELEVATED"
-    HIGH = "HIGH"
 
 
 class AlertSeverity(IntEnum):

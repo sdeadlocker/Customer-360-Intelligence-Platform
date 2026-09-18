@@ -2254,6 +2254,10 @@ h3 {
 .qa-turn__notice {
   margin: 0;
   line-height: 1.5;
+  /* Answers carry their own line structure (a cohort list is one customer per line, a pitch is
+     headed sections). Preserve newlines so a multi-line answer is not collapsed into one run-on
+     paragraph, while still wrapping long lines. */
+  white-space: pre-wrap;
 }
 
 .qa-turn__notice--refused {
@@ -2386,8 +2390,14 @@ h3 {
   transform: translateY(1px);
 }
 
-/* Give the standard button a gentle surface so it reads as a control on the light background. */
-.button {
+/* Give the standard button a gentle surface so it reads as a control on the light background.
+ *
+ * Primary buttons are excluded explicitly. This rule sits after `.button--primary` above at equal
+ * specificity, so without the `:not()` it would overwrite the gradient with a plain surface while the
+ * primary rule's white `--color-on-accent` text stayed — white text on a white button, readable only
+ * on hover (where the hover rule below happened to recolour the text). Same reason the hover rule
+ * excludes it: recolouring the label to accent-indigo over the gradient would fail contrast. */
+.button:not(.button--primary) {
   background: var(--color-surface);
   transition:
     border-color 0.15s ease,
@@ -2395,7 +2405,7 @@ h3 {
     background-color 0.15s ease;
 }
 
-.button:hover:not(:disabled) {
+.button:hover:not(:disabled):not(.button--primary) {
   color: var(--color-accent);
 }
 
@@ -6036,8 +6046,9 @@ body:has(.search-page) {
 }
 
 .dashboard__ask .ask-panel__log {
-  max-height: 22rem;
+  max-height: min(60vh, 32rem);
   overflow-y: auto;
+  scroll-behavior: smooth;
 }
 
 /* ================================================================================================
@@ -8150,4 +8161,1818 @@ body:has(.search-page) {
   .app-footer__grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* ================================================================================================
+ * REVENUE INTELLIGENCE (Phase 22 — the four revenue plays)
+ *
+ * The landing-page command centre (`.revenue-hero`) plus four dashboard cards: economic profit,
+ * wallet share / held-away, money in motion and fee recovery.
+ *
+ * Two rules hold throughout. Every colour is a semantic token, so both themes follow automatically
+ * and the contrast audit keeps covering the pairings. And the accent gradient is used only where no
+ * text sits on it — the decorative art panel and solid primary buttons — because the gradient's light
+ * stop does not clear AA for body text; all real figures sit as `--color-text` on a surface token.
+ * ============================================================================================== */
+
+/* ---------------------------------------------------------------- the preview marker */
+
+/* Shown whenever a revenue endpoint is absent and the card is rendering illustrative figures. It is
+   real text next to a badge, never a colour or a tooltip, so a preview cannot be mistaken for data. */
+.revenue-preview {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-warn-fill);
+  color: var(--color-text);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-normal);
+}
+
+/* ---------------------------------------------------------------- command centre hero */
+
+.revenue-hero {
+  position: relative;
+  overflow: hidden;
+  margin-bottom: var(--space-5);
+  padding: var(--space-6);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-lg);
+}
+
+/* A soft accent wash and two blurred orbs behind the content — decoration only. */
+.revenue-hero__decor {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.revenue-hero__orb {
+  position: absolute;
+  border-radius: var(--radius-pill);
+  background: var(--color-info-fill);
+  filter: blur(46px);
+}
+
+.revenue-hero__orb--1 {
+  width: 20rem;
+  height: 20rem;
+  top: -8rem;
+  right: -4rem;
+}
+
+.revenue-hero__orb--2 {
+  width: 14rem;
+  height: 14rem;
+  bottom: -7rem;
+  left: 30%;
+  background: var(--color-pass-fill);
+}
+
+.revenue-hero__grid-lines {
+  position: absolute;
+  inset: 0;
+  opacity: 0.4;
+  background-image:
+    linear-gradient(to right, var(--color-border) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--color-border) 1px, transparent 1px);
+  background-size: 3rem 3rem;
+  mask-image: linear-gradient(to bottom right, rgba(0, 0, 0, 0.5), transparent 65%);
+}
+
+.revenue-hero__inner {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 15rem;
+  gap: var(--space-6);
+  /* stretch, not start, so the decorative art column fills the full height of the hero card
+     alongside the KPIs and the play breakdown, rather than pinning to the top and leaving a gap. */
+  align-items: stretch;
+}
+
+.revenue-hero__main {
+  min-width: 0;
+}
+
+.revenue-hero__heading {
+  margin-bottom: var(--space-5);
+}
+
+.revenue-hero__eyebrow {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  margin: 0 0 var(--space-2);
+  color: var(--color-accent);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.revenue-hero__title {
+  margin: 0 0 var(--space-2);
+  color: var(--color-text);
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-tight);
+}
+
+.revenue-hero__lede {
+  max-width: 44rem;
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.revenue-hero__loading {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+/* ---------------------------------------------------------------- KPI tiles */
+
+.revenue-hero__kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: 0 0 var(--space-4);
+}
+
+.revenue-kpi {
+  position: relative;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+}
+
+/* The headline number of the panel: an accent edge, not an accent fill, so the figure stays
+   `--color-text` on a surface and its contrast is the audited pairing. */
+.revenue-kpi--primary {
+  border-color: var(--color-border-interactive);
+  box-shadow: inset 3px 0 0 var(--color-accent);
+}
+
+.revenue-kpi__glyph {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  font-size: var(--font-size-md);
+  opacity: 0.65;
+}
+
+.revenue-kpi__label {
+  margin: 0;
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* The `dd` carries the whole tile body (glyph, figure, hint) because a `dl` group may contain only a
+   `dt` and its `dd` — see the note in RevenueHero. */
+.revenue-kpi__body {
+  margin: 0;
+}
+
+.revenue-kpi__value {
+  display: block;
+  margin-top: var(--space-1);
+  color: var(--color-text);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--line-height-tight);
+}
+
+.revenue-kpi__hint {
+  display: block;
+  margin-top: var(--space-1);
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-xs);
+}
+
+/* ---------------------------------------------------------------- urgency strip */
+
+.revenue-hero__urgent {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  margin-bottom: var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border-strong);
+  border-left: 3px solid var(--color-warn);
+  border-radius: var(--radius-md);
+  background: var(--color-warn-fill);
+}
+
+.revenue-hero__urgent-pulse {
+  flex: none;
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: var(--radius-pill);
+  background: var(--color-warn);
+  animation: revenue-pulse 2s ease-in-out infinite;
+}
+
+@keyframes revenue-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(1.35);
+  }
+}
+
+.revenue-hero__urgent-text {
+  flex: 1;
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+}
+
+.revenue-hero__urgent-cta {
+  flex: none;
+}
+
+/* ---------------------------------------------------------------- play breakdown */
+
+.revenue-hero__breakdown-head {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+
+.revenue-hero__subhead {
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+}
+
+.revenue-hero__breakdown-actions {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.revenue-hero__provenance {
+  margin: var(--space-4) 0 0;
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-xs);
+}
+
+.play-bars {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.play-bars__row {
+  display: grid;
+  grid-template-columns: 11rem minmax(0, 1fr) 5rem 5rem;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.play-bars__label {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.play-bars__glyph {
+  font-size: var(--font-size-sm);
+}
+
+.play-bars__track {
+  position: relative;
+  height: 0.875rem;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-raised);
+  box-shadow: inset 0 0 0 1px var(--color-border);
+}
+
+/* Capturable is the full bar; realized is the darker portion inside it, so the ratio between the
+   two reads at a glance. Both numbers are printed in the row and the table regardless. */
+.play-bars__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: var(--radius-pill);
+  background: var(--color-info-fill);
+  box-shadow: inset 0 0 0 1px var(--color-border-interactive);
+}
+
+.play-bars__realized {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent-strong);
+}
+
+.play-bars__value {
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.play-bars__count {
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-xs);
+  text-align: right;
+}
+
+.play-bars__legend {
+  display: flex;
+  gap: var(--space-4);
+  margin-top: var(--space-2);
+}
+
+.play-bars__legend-item {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-xs);
+}
+
+.play-bars__swatch {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: var(--radius-sm);
+}
+
+.play-bars__swatch--capturable {
+  background: var(--color-info-fill);
+  box-shadow: inset 0 0 0 1px var(--color-border-interactive);
+}
+
+.play-bars__swatch--realized {
+  background: var(--color-accent-strong);
+}
+
+/* ---------------------------------------------------------------- hero art panel */
+
+/* The only place the accent gradient is used at size — it contains no text, just the decorative
+   illustration, so no contrast pairing depends on it. */
+.revenue-hero__art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--gradient-accent);
+  box-shadow: var(--shadow-accent);
+}
+
+.revenue-hero__svg {
+  width: 100%;
+  height: auto;
+}
+
+/* ---------------------------------------------------------------- money in motion */
+
+.money-in-motion__title-glyph {
+  margin-right: var(--space-2);
+}
+
+.money-in-motion__lede {
+  margin: 0 0 var(--space-3);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.money-in-motion__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.inflow {
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+/* Urgency recolours the edge as decorative reinforcement; the tier and the day count are both
+   stated in words on every card, so nothing here is colour-only. */
+.inflow--today {
+  border-left-color: var(--color-fail);
+  background: var(--color-fail-fill);
+}
+
+.inflow--soon {
+  border-left-color: var(--color-warn);
+}
+
+.inflow--open {
+  border-left-color: var(--color-info);
+}
+
+.inflow__head {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+
+.inflow__urgency {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--color-neutral-fill);
+  color: var(--color-text);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+}
+
+.inflow__urgency--today {
+  background: var(--color-fail-fill);
+  color: var(--color-fail);
+}
+
+.inflow__urgency--soon {
+  background: var(--color-warn-fill);
+  color: var(--color-warn);
+}
+
+.inflow__urgency--open {
+  background: var(--color-info-fill);
+  color: var(--color-accent);
+}
+
+.inflow__amount {
+  color: var(--color-text);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.inflow__source {
+  margin: 0 0 var(--space-3);
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.inflow__confidence {
+  color: var(--color-text-subtle);
+  font-weight: var(--font-weight-normal);
+}
+
+.inflow__window {
+  margin-bottom: var(--space-3);
+}
+
+.inflow__window-track {
+  display: block;
+  height: 0.375rem;
+  margin-bottom: var(--space-1);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-raised);
+  box-shadow: inset 0 0 0 1px var(--color-border);
+}
+
+.inflow__window-fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent-strong);
+}
+
+.inflow__window-fill--today {
+  background: var(--color-fail);
+}
+
+.inflow__window-fill--soon {
+  background: var(--color-warn);
+}
+
+.inflow__window-label {
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-xs);
+}
+
+.inflow__summary {
+  margin: 0 0 var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.inflow__action {
+  display: flex;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-info-fill);
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+}
+
+.inflow__action-tag {
+  flex: none;
+  color: var(--color-accent);
+  font-weight: var(--font-weight-semibold);
+}
+
+.inflow__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.inflow__customer-link {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border-interactive);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-accent);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+}
+
+.inflow__customer-link:hover {
+  background: var(--color-info-fill);
+}
+
+.inflow__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* ---------------------------------------------------------------- wallet share / held-away */
+
+.wallet-share__primacy {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--color-warn);
+  border-radius: var(--radius-sm);
+  background: var(--color-warn-fill);
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+}
+
+.wallet-share__metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.held-away__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.held-away__row {
+  padding: var(--space-3);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+}
+
+.held-away__head {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+
+.held-away__type {
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.held-away__figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.held-away__value {
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.held-away__flow,
+.held-away__confidence {
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-xs);
+}
+
+.held-away__basis {
+  margin: 0 0 var(--space-1);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-normal);
+}
+
+.held-away__counterparty {
+  margin: 0;
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-xs);
+  font-style: italic;
+}
+
+/* ---------------------------------------------------------------- fee recovery */
+
+.fee-recovery__headline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: center;
+  margin-bottom: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-pass-fill);
+}
+
+.fee-recovery__headline-figure {
+  display: flex;
+  flex-direction: column;
+}
+
+.fee-recovery__headline-value {
+  color: var(--color-text);
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--line-height-tight);
+}
+
+.fee-recovery__headline-label {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.fee-recovery__headline-hint {
+  flex: 1;
+  min-width: 14rem;
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.leak-bars {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.leak-bars__row {
+  display: grid;
+  grid-template-columns: 11rem minmax(0, 1fr) 4.5rem;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.leak-bars__label {
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+}
+
+.leak-bars__track {
+  height: 0.75rem;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-raised);
+  box-shadow: inset 0 0 0 1px var(--color-border);
+}
+
+.leak-bars__fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--color-pass);
+}
+
+.leak-bars__value {
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.fee-recovery__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.leak {
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.leak--actioned {
+  opacity: 0.7;
+  background: var(--color-surface-raised);
+}
+
+.leak__head {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: var(--space-1);
+}
+
+.leak__type {
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.leak__annual {
+  color: var(--color-pass);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.leak__account {
+  margin: 0 0 var(--space-1);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+}
+
+.leak__basis {
+  margin: 0 0 var(--space-2);
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-xs);
+}
+
+.leak__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* ---------------------------------------------------------------- economic profit */
+
+.economic-profit__headline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+}
+
+.economic-profit__figure {
+  display: flex;
+  flex-direction: column;
+}
+
+.economic-profit__value {
+  color: var(--color-text);
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--line-height-tight);
+}
+
+.economic-profit__unit {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.economic-profit__bands {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  align-items: flex-end;
+}
+
+.economic-profit__band {
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--color-info-fill);
+  color: var(--color-accent);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.economic-profit__median {
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-xs);
+}
+
+/* Balance tier versus profit tier — the reprioritization insight. */
+.tier-compare {
+  margin-bottom: var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.tier-compare--mismatch {
+  border-color: var(--color-border-strong);
+  border-left: 3px solid var(--color-warn);
+}
+
+.tier-compare__pair {
+  display: flex;
+  gap: var(--space-4);
+  align-items: center;
+  justify-content: center;
+}
+
+.tier-compare__item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  align-items: center;
+  text-align: center;
+}
+
+.tier-compare__label {
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.tier-compare__tier {
+  color: var(--color-text);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+}
+
+.tier-compare__note {
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-xs);
+}
+
+.tier-compare__arrow {
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-lg);
+}
+
+.tier-compare__verdict {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: baseline;
+  margin: var(--space-3) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+/* Two-sided profit build-up: credits and debits as columns. */
+.waterfall {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-end;
+  height: 11rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.waterfall__col {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-1);
+  align-items: center;
+  height: 100%;
+  min-width: 0;
+}
+
+.waterfall__bar-wrap {
+  display: flex;
+  flex: 1;
+  align-items: flex-end;
+  width: 100%;
+}
+
+.waterfall__bar {
+  display: block;
+  width: 100%;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+
+.waterfall__bar--credit {
+  background: var(--color-accent-strong);
+}
+
+/* A debit is hatched as well as recoloured, so "subtracts" is not carried by hue alone. */
+.waterfall__bar--debit {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--color-warn) 0,
+    var(--color-warn) 4px,
+    transparent 4px,
+    transparent 8px
+  );
+  box-shadow: inset 0 0 0 1px var(--color-warn);
+}
+
+.waterfall__amount {
+  color: var(--color-text);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.waterfall__label {
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-tight);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+/* ---------------------------------------------------------------- nav-rail card glyphs */
+
+.dash-cell[data-section='economic-profit'] .module__title::before {
+  content: '📐 ';
+}
+
+.dash-cell[data-section='wallet-share'] .module__title::before {
+  content: '🏦 ';
+}
+
+.dash-cell[data-section='money-in-motion'] .module__title::before {
+  content: '💸 ';
+}
+
+.dash-cell[data-section='fee-recovery'] .module__title::before {
+  content: '🧾 ';
+}
+
+/* ---------------------------------------------------------------- compact (glance) density */
+
+/* In the at-a-glance Cockpit density the revenue cards keep their headline figures and shed the
+   detail lists, rule text and per-row actions, so the whole 360 still fits roughly one screen. */
+.dashboard__grid--compact .held-away__basis,
+.dashboard__grid--compact .held-away__counterparty,
+.dashboard__grid--compact .leak__basis,
+.dashboard__grid--compact .leak__actions,
+.dashboard__grid--compact .inflow__action,
+.dashboard__grid--compact .inflow__chips,
+.dashboard__grid--compact .inflow__actions,
+.dashboard__grid--compact .tier-compare__note,
+.dashboard__grid--compact .fee-recovery__headline-hint,
+.dashboard__grid--compact .revenue-preview span:not(.badge) {
+  display: none;
+}
+
+.dashboard__grid--compact .waterfall {
+  height: 6rem;
+}
+
+.dashboard__grid--compact .waterfall__label {
+  display: none;
+}
+
+.dashboard__grid--compact .money-in-motion__list,
+.dashboard__grid--compact .held-away__list,
+.dashboard__grid--compact .fee-recovery__list {
+  max-height: 12rem;
+  overflow: hidden;
+}
+
+.dashboard__grid--compact .economic-profit__value,
+.dashboard__grid--compact .fee-recovery__headline-value {
+  font-size: var(--font-size-lg);
+}
+
+.dashboard__grid--compact .wallet-share__metrics {
+  gap: var(--space-2);
+}
+
+/* ---------------------------------------------------------------- responsive */
+
+@media (max-width: 68rem) {
+  .revenue-hero__inner {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* The art panel is pure decoration; drop it rather than shrink it on narrow viewports. */
+  .revenue-hero__art {
+    display: none;
+  }
+
+  .revenue-hero__kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 48rem) {
+  .revenue-hero {
+    padding: var(--space-4);
+  }
+
+  .revenue-hero__kpis {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .play-bars__row,
+  .leak-bars__row {
+    grid-template-columns: minmax(0, 1fr) 4.5rem;
+  }
+
+  /* The bar itself is decorative; on a phone the label and the figure are what matter. */
+  .play-bars__track,
+  .leak-bars__track {
+    display: none;
+  }
+
+  .play-bars__count {
+    display: none;
+  }
+
+  .revenue-hero__urgent {
+    flex-wrap: wrap;
+  }
+
+  .waterfall {
+    height: 8rem;
+  }
+
+  .waterfall__label {
+    display: none;
+  }
+}
+
+/* ================================================================================================
+ * LANDING PAGE — left navigation rail (Phase 22)
+ *
+ * The landing page reuses the dashboard's `.dashboard__layout` grid and `.dash-nav` rail wholesale,
+ * so only three things are new: the pinned Ask wrapper, the stacked section column, and the quick-tips
+ * block that replaced the old right-hand hero aside.
+ *
+ * (`.search-page__layout`, `.search-page__primary` and the `.search-page__hero*` rules above are now
+ * unused — superseded by this layout — and are left in place rather than excised.)
+ * ============================================================================================== */
+
+/* The universal Ask panel, pinned between the header and the rail. Its own vivid `.ask-panel`
+   styling already carries the branding, so this only owns the spacing. */
+.landing__ask {
+  position: relative;
+  z-index: 1;
+  margin-bottom: var(--space-5);
+}
+
+/* The section column beside the rail: one stacked surface per section. */
+.landing__main {
+  display: grid;
+  gap: var(--space-5);
+  align-content: start;
+  min-width: 0;
+}
+
+.landing-cell {
+  min-width: 0;
+  /* Anchor-scrolling from the nav should not tuck a section under the sticky header. */
+  scroll-margin-top: var(--space-4);
+}
+
+/* Inside the section grid the gap owns the rhythm, so the hero drops its own bottom margin. */
+.landing-cell[data-section='pipeline'] .revenue-hero {
+  margin-bottom: 0;
+}
+
+/* ---------------------------------------------------------------- quick tips in the rail */
+
+.dash-nav__tips {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.dash-nav__tip-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dash-nav__tip {
+  display: grid;
+  grid-template-columns: 1.25rem minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: start;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-normal);
+}
+
+/* ---------------------------------------------------------------- rail-width tuning */
+
+/* The landing sections are wider surfaces than dashboard cards, so the rail is a touch narrower here
+   and the sections take the slack. Falls back to the dashboard's single column on a narrow viewport
+   via the shared `.dashboard__layout` breakpoint. */
+@media (min-width: 60.0625rem) {
+  .search-page .dashboard__layout {
+    grid-template-columns: 12.5rem minmax(0, 1fr);
+  }
+}
+
+/* ================================================================================================
+ * LANDING ASK PANEL — compact (appended last, wins the cascade)
+ *
+ * The pinned universal Ask panel sits above four substantial sections, so on the landing page it is
+ * trimmed to take roughly half the height it did: the empty-state hero becomes a horizontal row
+ * (illustration beside the text instead of a centred column), the composer loses a row by hiding its
+ * label visually, and the chrome tightens by one step throughout.
+ *
+ * Scoped to `.landing__ask`, so the dashboard's customer-scoped Ask panel is unchanged. Nothing here
+ * removes content or affordances — the starter prompts, the lede and the label all remain, the label
+ * as screen-reader-only text still associated with the input.
+ * ============================================================================================= */
+
+.landing__ask {
+  margin-bottom: var(--space-4);
+}
+
+.landing__ask .ask-panel {
+  padding: var(--space-4);
+  border-radius: 16px;
+  /* The branded frame + accent rail the dashboard's pinned Ask panel gets, so the collapsed
+     launcher on the landing page reads as the same component rather than a bare padded block. */
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  background:
+    radial-gradient(
+      120% 140% at 100% 0%,
+      color-mix(in srgb, var(--color-accent) 10%, transparent),
+      transparent 55%
+    ),
+    var(--color-surface);
+}
+
+.landing__ask .ask-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--gradient-accent);
+}
+
+/* When collapsed the launcher button owns the padding; the global `.ask-panel--collapsed { padding:
+   0 }` already zeroes it, so nothing more is needed here. */
+
+/* Title one step down, with a smaller spark chip. */
+.landing__ask .ask-panel .module__title {
+  font-size: var(--font-size-md);
+}
+
+.landing__ask .ask-panel .module__title::before {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+
+/* ---------------------------------------------------------------- hero as a row, not a column */
+
+/* The single biggest height saving: art in column one spanning the title and lede, with the starter
+   prompts on their own full-width row beneath. */
+.landing__ask .ask-hero {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-3);
+  text-align: left;
+}
+
+.landing__ask .ask-hero__art {
+  grid-row: span 2;
+  width: 2.25rem;
+  height: 2.25rem;
+}
+
+.landing__ask .ask-hero__title {
+  grid-column: 2;
+  font-size: var(--font-size-sm);
+}
+
+/* Clamped rather than truncated: the full sentence stays in the DOM for assistive technology. */
+.landing__ask .ask-hero__lede {
+  grid-column: 2;
+  max-width: 68ch;
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.landing__ask .ask-hero__prompts {
+  grid-column: 1 / -1;
+  margin-top: var(--space-2);
+}
+
+.landing__ask .ask-hero__chips {
+  justify-content: flex-start;
+}
+
+/* ---------------------------------------------------------------- composer + log */
+
+/* The placeholder and the panel title already say what the field is for, so the label is hidden
+   visually to save a row while staying in the accessibility tree and bound to the input. */
+.landing__ask .ask-panel__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.landing__ask .ask-panel__input,
+.landing__ask .ask-panel__row .button--primary {
+  height: 2.5rem;
+}
+
+.landing__ask .ask-panel__input {
+  font-size: var(--font-size-base);
+}
+
+.landing__ask .ask-panel__row .button--primary {
+  padding: 0 var(--space-4);
+  font-size: var(--font-size-sm);
+}
+
+/* Once a conversation starts the log is the panel's content, so it keeps a scroll cap rather than
+   growing the pinned panel down the page. */
+.landing__ask .ask-panel__log {
+  max-height: min(60vh, 34rem);
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+@media (max-width: 40rem) {
+  /* On a phone the illustration costs more than it adds beside two lines of text. */
+  .landing__ask .ask-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .landing__ask .ask-hero__art {
+    display: none;
+  }
+
+  .landing__ask .ask-hero__title,
+  .landing__ask .ask-hero__lede {
+    grid-column: 1;
+  }
+}
+
+/* ================================================================================================
+ * FEE RECOVERY — finding evidence (Phase 22 play 6 backend landed)
+ *
+ * The scan returns the sentence that establishes each gap plus the corpus document it is measured
+ * against. Both are rendered on the card rather than tucked away: a finding someone is expected to
+ * bill a customer for has to be defensible on sight.
+ * ============================================================================================== */
+
+.leak__evidence {
+  margin: 0 0 var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-normal);
+}
+
+.leak__doc {
+  color: var(--color-text-subtle);
+  font-family: var(--font-mono);
+}
+
+/* In the at-a-glance density the evidence sentence is the first thing to go: the amount and the
+   cause still read, and the detail is one click away in the full view. */
+.dashboard__grid--compact .leak__evidence {
+  display: none;
+}
+
+/* ================================================================================================
+ * VOICE ASSISTANT (Phase 23)
+ *
+ * An in-browser voice layer for the Ask panels: a mic button that dictates a question, a toggle to
+ * hear the answer, and a small SVG avatar whose mouth animates from the live speech-synthesis timing
+ * (see useSpeechOutput). No third-party service, no per-utterance network call — the same audio the
+ * user hears drives the face, which is what keeps it low-latency and keeps customer text in the tab.
+ *
+ * Every colour is a token so both themes follow and the contrast audit keeps holding. All motion is
+ * frozen under prefers-reduced-motion (the answer text and audio carry the meaning; the animation is
+ * reinforcement).
+ * ============================================================================================== */
+
+/* ---------------------------------------------------------------- panel head with avatar */
+
+.ask-panel__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.ask-panel__head .module__title {
+  flex: 1;
+  min-width: 0;
+}
+
+.ask-panel__head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* ---------------------------------------------------------------- rail + chat two-column body */
+
+/* A contact-style portrait rail on the left, the conversation on the right — the layout of the
+   reference. The rail is fixed-width and does not stretch to the full panel; the chat takes the
+   rest. Below a narrow panel the rail drops above the chat and shrinks, so it never dominates. */
+.ask-layout {
+  display: grid;
+  grid-template-columns: 12rem minmax(0, 1fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+
+.ask-layout--no-rail {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.ask-chat {
+  min-width: 0;
+}
+
+.ask-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-raised);
+  text-align: center;
+}
+
+.ask-rail__name {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+}
+
+.ask-rail__role {
+  color: var(--color-text-subtle);
+  font-weight: var(--font-weight-normal);
+  font-size: var(--font-size-sm);
+}
+
+.ask-rail__status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.ask-rail__status-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-pill);
+  background: var(--color-pass);
+}
+
+.ask-rail__status--listening .ask-rail__status-dot {
+  background: var(--color-fail);
+  animation: ask-mic-pulse 1.4s ease-in-out infinite;
+}
+
+.ask-rail__status--thinking .ask-rail__status-dot,
+.ask-rail__status--speaking .ask-rail__status-dot {
+  background: var(--color-accent);
+}
+
+/* The Speak pill under the portrait — the hero dictation affordance, no mic on the face itself. */
+.ask-rail__speak {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+  padding: var(--space-2) var(--space-4);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent-strong);
+  color: var(--color-on-accent);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: filter 0.12s ease;
+}
+
+.ask-rail__speak:hover {
+  filter: brightness(1.05);
+}
+
+.ask-rail__speak--live {
+  background: var(--color-fail);
+  animation: ask-mic-pulse 1.4s ease-in-out infinite;
+}
+
+@media (max-width: 34rem) {
+  /* On a narrow panel, put the rail above the chat and make it a slim horizontal strip rather than
+     a tall column, so the portrait never eats the whole panel. */
+  .ask-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-3);
+  }
+  .ask-rail {
+    flex-direction: row;
+    justify-content: flex-start;
+    text-align: left;
+    gap: var(--space-3);
+  }
+  .ask-rail .assistant-avatar {
+    width: 64px !important;
+    height: 64px !important;
+  }
+  .ask-rail__speak {
+    margin-left: auto;
+  }
+}
+
+/* ---------------------------------------------------------------- the avatar */
+
+.assistant-avatar {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The pulsing ring behind the frame, for listening / speaking. */
+.assistant-avatar__ring {
+  position: absolute;
+  inset: -4px;
+  border-radius: 22px;
+  opacity: 0;
+  background: var(--color-accent);
+}
+
+.assistant-avatar--listening .assistant-avatar__ring,
+.assistant-avatar--speaking .assistant-avatar__ring {
+  opacity: 0.35;
+  animation: avatar-halo 1.6s ease-in-out infinite;
+}
+
+@keyframes avatar-halo {
+  0%,
+  100% {
+    transform: scale(0.94);
+    opacity: 0.25;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 0.55;
+  }
+}
+
+/* The framed portrait — a rounded window that crops the photo or the drawing the same way. */
+.assistant-avatar__frame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
+  background: var(--color-accent-strong);
+}
+
+.assistant-avatar__photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.assistant-avatar__svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Lip-sync overlay: a small mouth over the lower third of the portrait, scaled by the live signal.
+   Sized to sit believably over a headshot's mouth whether the base is a photo or the drawing. */
+.assistant-avatar__lips {
+  position: absolute;
+  left: 50%;
+  bottom: 22%;
+  width: 22%;
+  height: 7%;
+  border-radius: 999px;
+  background: #6d2a30;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  transform-origin: center;
+  pointer-events: none;
+}
+
+/* Thinking dots in a small bubble at the top-right of the frame. */
+.assistant-avatar__thinking {
+  position: absolute;
+  top: 8%;
+  right: 8%;
+  display: inline-flex;
+  gap: 3px;
+  padding: 4px 6px;
+  border-radius: 999px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.assistant-avatar__thinking span {
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--color-accent-strong);
+  animation: avatar-think 1.2s ease-in-out infinite;
+}
+
+.assistant-avatar__thinking span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.assistant-avatar__thinking span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+/* A slow idle blink, and a livelier one while listening, so the illustrated fallback face is never
+   frozen. The origin sits at the eyes (cy≈53 in the 120×132 portrait viewBox). A supplied photo has
+   no `__eyes` group, so this simply does not apply to it. */
+.assistant-avatar__eyes {
+  transform-origin: 60px 53px;
+  animation: avatar-blink 5.5s ease-in-out infinite;
+}
+
+.assistant-avatar--listening .assistant-avatar__eyes {
+  animation-duration: 3.5s;
+}
+
+@keyframes avatar-blink {
+  0%,
+  92%,
+  100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.12);
+  }
+}
+
+/* Brows lift a touch while thinking on the illustrated fallback, reading as attentiveness. */
+.assistant-avatar__brows {
+  transform-origin: 60px 44px;
+  transition: transform 0.2s ease;
+}
+
+.assistant-avatar--thinking .assistant-avatar__brows {
+  transform: translateY(-1.5px);
+}
+
+@keyframes avatar-think {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+/* ---------------------------------------------------------------- speak-replies toggle */
+
+.ask-voice-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--color-border-interactive);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+  transition:
+    background-color 0.12s ease,
+    color 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.ask-voice-toggle:hover {
+  border-color: var(--color-accent);
+}
+
+.ask-voice-toggle--on {
+  border-color: transparent;
+  background: var(--color-info-fill);
+  color: var(--color-accent);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* ---------------------------------------------------------------- mic button */
+
+.ask-mic {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  align-self: stretch;
+  border: 1px solid var(--color-border-interactive);
+  border-radius: 14px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--font-size-md);
+  cursor: pointer;
+  transition:
+    background-color 0.12s ease,
+    border-color 0.12s ease,
+    box-shadow 0.12s ease;
+}
+
+.ask-mic:hover:not(:disabled) {
+  border-color: var(--color-accent);
+}
+
+.ask-mic:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Live: a red-tinted ring that pulses, so "the mic is hot" is unmistakable and not colour-only —
+   the button's aria-pressed and its aria-label both flip too. */
+.ask-mic--live {
+  border-color: var(--color-fail);
+  background: var(--color-fail-fill);
+  color: var(--color-fail);
+  animation: ask-mic-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes ask-mic-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-fail) 45%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--color-fail) 0%, transparent);
+  }
+}
+
+/* ---------------------------------------------------------------- composer voice status lines */
+
+.ask-voice-hint {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.ask-voice-hint__dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-pill);
+  background: var(--color-fail);
+  animation: ask-mic-pulse 1.4s ease-in-out infinite;
+}
+
+.ask-voice-error {
+  margin: var(--space-2) 0 0;
+  color: var(--color-fail);
+  font-size: var(--font-size-xs);
+}
+
+.ask-voice-note {
+  margin: var(--space-2) 0 0;
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-xs);
+}
+
+/* ---------------------------------------------------------------- reduced motion */
+
+@media (prefers-reduced-motion: reduce) {
+  .assistant-avatar__ring,
+  .assistant-avatar__eyes,
+  .assistant-avatar__brows,
+  .assistant-avatar__thinking span,
+  .ask-rail__status--listening .ask-rail__status-dot,
+  .ask-mic--live,
+  .ask-rail__speak--live,
+  .ask-voice-hint__dot {
+    animation: none !important;
+  }
+  /* Keep the "live" state legible without motion: the mic ring stays solid rather than pulsing. */
+  .ask-mic--live {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-fail) 30%, transparent);
+  }
+}
+
+/* ================================================================================================
+ * COLLAPSIBLE LANDING SECTION (Phase 23 tidy)
+ *
+ * Customer search on the landing page is a collapsed launcher until clicked, so the revenue
+ * sections below stay visible without scrolling. Reuses the global `.ask-launcher` bar for the
+ * closed state; the open state is an ordinary module with a Collapse control in its head.
+ * ============================================================================================== */
+
+.collapsible {
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: var(--color-surface);
+}
+
+/* Closed: the launcher owns the padding, so the module drops its own (mirrors the Ask launcher). */
+.collapsible--closed {
+  padding: 0;
+  overflow: hidden;
+}
+
+.collapsible__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
 }

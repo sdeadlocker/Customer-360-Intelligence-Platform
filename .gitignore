@@ -32,6 +32,10 @@ data/ground_truth/
 *.key
 !config/**/*.example
 
+# --- Local demo / deploy helper scripts (kept locally, not published) ---
+relaunch-demo.sh
+full-redeploy.sh
+
 # --- Terraform ---
 .terraform/
 .terraform.lock.hcl

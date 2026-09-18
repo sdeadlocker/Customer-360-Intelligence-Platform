@@ -23,10 +23,12 @@ from typing import TYPE_CHECKING
 from fastapi import Request
 
 from c360.api.envelope import ApiError, ErrorCode
+from c360.core.logging import get_logger
 from c360.data.engine import AccessMode, DatabaseFileMissingError, create_sqlite_engine
 from c360.data.repositories import build_repositories
 from c360.services.aggregator import C360Aggregator
 from c360.services.customer import CustomerService, RecentlyViewedTracker
+from c360.services.fee_recovery import FeeRecoveryService
 from c360.services.financial import FinancialService
 from c360.services.journey import JourneyService
 from c360.services.knowledge import KnowledgeService
@@ -39,7 +41,10 @@ if TYPE_CHECKING:
     from sqlalchemy import Engine
 
     from c360.core.config import Settings
+    from c360.data.repositories.fee_recovery import SqliteFeeRecoveryRepository
     from c360.reports.service import ReportService
+
+_logger = get_logger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,6 +86,11 @@ class Services:
     reports: ReportService | None = None
     #: The reports read engine, disposed at shutdown. ``None`` when reports are off.
     reports_engine: Engine | None = None
+    #: Fee recovery (Phase 22 play 6). Reads the same read-only customer engine as every other
+    #: deterministic service, so it owns no engine of its own and needs no disposal. ``None`` only
+    #: when the fee schedule could not be loaded — a deployment fault the endpoint reports as 503
+    #: rather than answering "no leakage", which would read as good news.
+    fee_recovery: FeeRecoveryService | None = None
 
 
 def build_services(settings: Settings) -> Services:
@@ -129,6 +139,7 @@ def build_services(settings: Settings) -> Services:
     knowledge, knowledge_engine = _build_knowledge(settings)
     signals, signals_engine = _build_signals(settings)
     reports, reports_engine = _build_reports(settings)
+    fee_recovery = _build_fee_recovery(settings, repositories.fee_recovery)
     return Services(
         engine=engine,
         customer=customer,
@@ -144,6 +155,36 @@ def build_services(settings: Settings) -> Services:
         signals_engine=signals_engine,
         reports=reports,
         reports_engine=reports_engine,
+        fee_recovery=fee_recovery,
+    )
+
+
+def _build_fee_recovery(
+    settings: Settings, repository: SqliteFeeRecoveryRepository
+) -> FeeRecoveryService | None:
+    """Construct the fee-recovery scan, or ``None`` if the fee schedule cannot be read.
+
+    The schedule is a committed artifact (``config/fee_schedule.json``), so a failure here means a
+    deployment did not ship it — a real fault, and one that must not be papered over. Returning
+    ``None`` makes the endpoint answer 503 with a clear message; the alternative, an empty schedule,
+    would make the scan report no findings, and "no leakage" is indistinguishable from "working".
+    """
+    from c360.domain.fees import FeeSchedule, FeeScheduleError  # noqa: PLC0415 - avoid import cycle
+
+    try:
+        schedule = FeeSchedule.from_file(settings.fee_schedule)
+    except FeeScheduleError as error:
+        _logger.error(
+            "fee schedule unavailable; fee recovery will report 503",
+            extra={"path": str(settings.fee_schedule), "error": str(error)},
+        )
+        return None
+    return FeeRecoveryService(
+        repository,
+        schedule,
+        courtesy_waiver_cycles=settings.fee_recovery_courtesy_waiver_cycles,
+        min_finding_cents=settings.fee_recovery_min_finding_cents,
+        lookback_months=settings.fee_recovery_lookback_months,
     )
 
 

@@ -28,6 +28,9 @@ export default defineConfig({
       '/customers': { target: BACKEND, changeOrigin: true },
       // The cross-customer Ask AI endpoint on the search landing page (task 9.6).
       '/ask': { target: BACKEND, changeOrigin: true },
+      // The revenue plays: the bank-wide priced pipeline and the cross-book money-in-motion feed
+      // (Phase 22). Per-customer revenue reads hang off `/customers`, already proxied above.
+      '/revenue': { target: BACKEND, changeOrigin: true },
       '/knowledge': { target: BACKEND, changeOrigin: true },
       '/admin': { target: BACKEND, changeOrigin: true },
       // RUM (task 10.5) posts OTLP/HTTP metrics here; proxied to the collector's HTTP receiver so

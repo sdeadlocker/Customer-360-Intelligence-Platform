@@ -23,11 +23,45 @@ from typing import TYPE_CHECKING
 
 from c360.api.pagination import Page, decode_cursor, encode_cursor
 from c360.data.repositories.customer import build_fts_query
+from c360.domain.enums import DelinquencyStatus, RiskBand
 
 if TYPE_CHECKING:
     from c360.data.repositories.customer import SqliteCustomerRepository
-    from c360.domain.models import ContactInfo, Customer, CustomerSearchHit, Employer, Household
+    from c360.domain.enums import CustomerSegment, CustomerValue
+    from c360.domain.models import (
+        ContactInfo,
+        Customer,
+        CustomerCohortHit,
+        CustomerSearchHit,
+        Employer,
+        Household,
+    )
     from c360.security.entitlement import EntitlementScope
+
+
+#: Band-score boundaries, matching :data:`c360.services.risk._BAND_*_MIN` and the repository's CASE.
+#: A requested band becomes a half-open ``[min, max)`` score window the repository filters on.
+_BAND_RANGES: dict[RiskBand, tuple[float | None, float | None]] = {
+    RiskBand.LOW: (None, 25.0),
+    RiskBand.MODERATE: (25.0, 50.0),
+    RiskBand.ELEVATED: (50.0, 75.0),
+    RiskBand.HIGH: (75.0, None),
+}
+
+#: The delinquency buckets that count as "past due" — every status except ``CURRENT``.
+_DELINQUENT_STATUSES: tuple[DelinquencyStatus, ...] = (
+    DelinquencyStatus.DPD_1_29,
+    DelinquencyStatus.DPD_30_59,
+    DelinquencyStatus.DPD_60_89,
+    DelinquencyStatus.DPD_90_PLUS,
+)
+
+
+def _risk_band_range(band: RiskBand | None) -> tuple[float | None, float | None]:
+    """The half-open ``[min, max)`` score window for a band, ``(None, None)`` when no band given."""
+    if band is None:
+        return None, None
+    return _BAND_RANGES[band]
 
 
 class RecentlyViewedTracker:
@@ -117,6 +151,54 @@ class CustomerService:
         after = decode_cursor(cursor)
         hits = self._repository.search_scoped(scope, match, limit=limit + 1, after=after)
         return _to_page(hits, limit, key=lambda hit: hit.customer_id)
+
+    # ---------------------------------------------------------------- cohort (cross-customer Q&A)
+    def cohort(
+        self,
+        scope: EntitlementScope,
+        *,
+        risk_band: RiskBand | None = None,
+        min_risk_band: RiskBand | None = None,
+        segments: Sequence[CustomerSegment] | None = None,
+        values: Sequence[CustomerValue] | None = None,
+        delinquent_only: bool = False,
+        limit: int,
+    ) -> Sequence[CustomerCohortHit]:
+        """A ranked, entitlement-scoped list of the book matching a cohort criterion.
+
+        This is the book-level counterpart to :meth:`search`: where search resolves *which* customer
+        a named question is about, this answers a question about a *set* of customers — "high risk
+        customers", "my platinum clients", "anyone past due". A requested :class:`RiskBand` is
+        translated here into the ``risk_score`` range the repository filters on (the banding lives
+        in the risk module; the service only maps a band to its cut points), so the repository stays
+        a pure SQL filter and the band boundaries are defined once per layer. ``delinquent_only``
+        to the four non-``CURRENT`` delinquency buckets. Ranking is by risk score descending when a
+        risk band was asked for (highest-risk first), by value score otherwise. Scoping happens
+        inside the query, so a restricted book never sees a customer outside it (requirement 3.3).
+
+        ``risk_band`` and ``min_risk_band`` express two different asks: an exact band ("moderate
+        risk customers") and a floor ("high risk" as most people mean it — the riskiest, i.e. this
+        band or higher). An exact band wins when both are given; a floor drops the upper bound so
+        every customer at or above the band's lower cut point is included.
+        """
+        if risk_band is not None:
+            min_score, max_score = _risk_band_range(risk_band)
+        elif min_risk_band is not None:
+            min_score, max_score = _risk_band_range(min_risk_band)[0], None
+        else:
+            min_score, max_score = None, None
+        wants_risk_order = risk_band is not None or min_risk_band is not None or delinquent_only
+        delinquency_statuses = _DELINQUENT_STATUSES if delinquent_only else None
+        return self._repository.cohort_scoped(
+            scope,
+            min_risk_score=min_score,
+            max_risk_score=max_score,
+            segments=list(segments) if segments else None,
+            values=list(values) if values else None,
+            delinquency_statuses=delinquency_statuses,
+            order_by_risk_desc=wants_risk_order,
+            limit=limit,
+        )
 
     # ---------------------------------------------------------------- profile (req 4.5, 4.6)
     def get_profile(self, customer_id: str) -> Customer | None:

@@ -30,6 +30,10 @@ import {
 } from '../features/dashboard/widgets/RelationshipWidget';
 import { RiskWidget } from '../features/dashboard/widgets/RiskWidget';
 import { ReportsPanel } from '../features/reports/ReportsPanel';
+import { EconomicProfitWidget } from '../features/revenue/EconomicProfitWidget';
+import { FeeRecoveryWidget } from '../features/revenue/FeeRecoveryWidget';
+import { MoneyInMotionWidget } from '../features/revenue/MoneyInMotion';
+import { WalletShareWidget } from '../features/revenue/WalletShareWidget';
 import { mark } from '../rum/rum';
 
 /**
@@ -162,13 +166,19 @@ type SectionSize = 'sm' | 'md' | 'lg' | 'xl';
 interface DashboardSection {
   readonly id: string;
   readonly label: string;
-  readonly group: 'Overview' | 'Intelligence' | 'AI insights';
+  readonly group: 'Overview' | 'Revenue' | 'Intelligence' | 'AI insights';
   readonly size: SectionSize;
   readonly node: React.ReactNode;
 }
 
+/**
+ * Nav group order. Revenue sits directly after Overview, ahead of Intelligence: the four plays
+ * (Phase 22) answer "what is this relationship worth and what is it leaving on the table", which is
+ * the question an RM opens a customer to act on.
+ */
 const SECTION_GROUPS: readonly DashboardSection['group'][] = [
   'Overview',
+  'Revenue',
   'Intelligence',
   'AI insights',
 ];
@@ -182,6 +192,10 @@ const SECTION_ICONS: Readonly<Record<string, string>> = {
   profile: '👤',
   contact: '✉️',
   financial: '💰',
+  'economic-profit': '📐',
+  'wallet-share': '🏦',
+  'money-in-motion': '💸',
+  'fee-recovery': '🧾',
   expenses: '📊',
   'expenses-category': '🍩',
   'expenses-trend': '📈',
@@ -243,6 +257,37 @@ function DashboardSections({
         group: 'Overview',
         size: 'lg',
         node: <FinancialWidget view={view} customerId={customerId} />,
+      },
+      // ---------------------------------------------------------------- Revenue (Phase 22)
+      // Ordered by the sequence the plays earn their keep: what the relationship is worth, what is
+      // held elsewhere, what is movable right now, and what is billable today.
+      {
+        id: 'economic-profit',
+        label: 'Economic profit',
+        group: 'Revenue',
+        size: 'md',
+        node: <EconomicProfitWidget customerId={customerId} />,
+      },
+      {
+        id: 'wallet-share',
+        label: 'Wallet share',
+        group: 'Revenue',
+        size: 'lg',
+        node: <WalletShareWidget customerId={customerId} />,
+      },
+      {
+        id: 'money-in-motion',
+        label: 'Money in motion',
+        group: 'Revenue',
+        size: 'md',
+        node: <MoneyInMotionWidget customerId={customerId} />,
+      },
+      {
+        id: 'fee-recovery',
+        label: 'Fee recovery',
+        group: 'Revenue',
+        size: 'md',
+        node: <FeeRecoveryWidget customerId={customerId} />,
       },
       {
         id: 'expenses',

@@ -1794,6 +1794,49 @@
           }
         }
       }
+    },
+    "/customers/{customer_id}/revenue/fee-recovery": {
+      "get": {
+        "tags": [
+          "revenue"
+        ],
+        "summary": "Recoverable fee income: waived, mispriced and unbilled charges",
+        "description": "Scan the customer's deposit billing against the published fee schedule.\n\nA customer with clean billing returns an empty finding list and zero totals rather than a 404:\n\"nothing recoverable here\" is a real answer, and a 404 would make a correctly-billed customer\nindistinguishable from a missing one.",
+        "operationId": "get_fee_recovery_customers__customer_id__revenue_fee_recovery_get",
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Customer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_dict_str__Any__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {

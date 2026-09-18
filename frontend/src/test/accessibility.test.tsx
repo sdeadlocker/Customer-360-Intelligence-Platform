@@ -15,6 +15,11 @@ import {
 import { OffersWidget } from '../features/dashboard/widgets/OffersWidget';
 import { RelationshipWidget } from '../features/dashboard/widgets/RelationshipWidget';
 import { RiskWidget } from '../features/dashboard/widgets/RiskWidget';
+import { EconomicProfitWidget } from '../features/revenue/EconomicProfitWidget';
+import { FeeRecoveryWidget } from '../features/revenue/FeeRecoveryWidget';
+import { MoneyInMotionPanel } from '../features/revenue/MoneyInMotion';
+import { RevenueHero } from '../features/revenue/RevenueHero';
+import { WalletShareWidget } from '../features/revenue/WalletShareWidget';
 
 /**
  * Automated accessibility gate (task 15.4, requirements 16.1, 16.3).
@@ -284,5 +289,65 @@ describe('accessibility — relationship network', () => {
     root.focus();
     await userEvent.keyboard('{ArrowDown}{Enter}');
     expect(screen.getByRole('group', { name: /node detail/i })).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------- revenue plays (Phase 22)
+
+/**
+ * The four revenue surfaces run through the same gate. Each is rendered in its `preview` state (the
+ * mocked client rejects, which is also how it behaves against a backend without the revenue engine)
+ * and every chart's table equivalent is revealed first, so axe judges the tables rather than the
+ * `aria-hidden` charts.
+ */
+describe('accessibility — revenue intelligence', () => {
+  async function revealTables(): Promise<void> {
+    for (const toggle of screen.queryAllByRole('button', { name: /show data table/i })) {
+      await userEvent.click(toggle);
+    }
+  }
+
+  it('the revenue hero has no violations with the play table shown', async () => {
+    getEnvelopeMock.mockRejectedValue(new Error('revenue engine not deployed'));
+
+    const { container } = render(<RevenueHero onOpenUrgent={vi.fn()} />);
+    await screen.findByText('Preview');
+    await revealTables();
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it('the money-in-motion feed has no violations', async () => {
+    getEnvelopeMock.mockRejectedValue(new Error('revenue engine not deployed'));
+
+    const { container } = render(<MoneyInMotionPanel onOpenCustomer={vi.fn()} />);
+    await screen.findByRole('heading', { name: /money in motion/i });
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it('the wallet-share widget has no violations with the share table shown', async () => {
+    getEnvelopeMock.mockRejectedValue(new Error('revenue engine not deployed'));
+
+    const { container } = render(<WalletShareWidget customerId="C1" />);
+    await screen.findByRole('heading', { name: /wallet share/i });
+    await revealTables();
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it('the fee-recovery widget has no violations with the cause table shown', async () => {
+    getEnvelopeMock.mockRejectedValue(new Error('revenue engine not deployed'));
+
+    const { container } = render(<FeeRecoveryWidget customerId="C1" />);
+    await screen.findByRole('heading', { name: /fee recovery/i });
+    await revealTables();
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it('the economic-profit widget has no violations with the build-up table shown', async () => {
+    getEnvelopeMock.mockRejectedValue(new Error('revenue engine not deployed'));
+
+    const { container } = render(<EconomicProfitWidget customerId="C1" />);
+    await screen.findByRole('heading', { name: /economic profit/i });
+    await revealTables();
+    expect(await axe(container)).toHaveNoViolations();
   });
 });

@@ -785,6 +785,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/customers/{customer_id}/revenue/fee-recovery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Recoverable fee income: waived, mispriced and unbilled charges
+         * @description Scan the customer's deposit billing against the published fee schedule.
+         *
+         *     A customer with clean billing returns an empty finding list and zero totals rather than a 404:
+         *     "nothing recoverable here" is a real answer, and a 404 would make a correctly-billed customer
+         *     indistinguishable from a missing one.
+         */
+        get: operations["get_fee_recovery_customers__customer_id__revenue_fee_recovery_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2674,6 +2698,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_fee_recovery_customers__customer_id__revenue_fee_recovery_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                customer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_dict_str__Any__"];
+                };
             };
             /** @description Validation Error */
             422: {

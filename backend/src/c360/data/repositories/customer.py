@@ -16,15 +16,24 @@ from typing import TYPE_CHECKING
 from c360.data.repositories.base import (
     SqliteRepository,
     Statement,
+    expand_in_clause,
     optional_model,
     to_models,
 )
-from c360.domain.models import ContactInfo, Customer, CustomerSearchHit, Employer, Household
+from c360.domain.models import (
+    ContactInfo,
+    Customer,
+    CustomerCohortHit,
+    CustomerSearchHit,
+    Employer,
+    Household,
+)
 from c360.security.entitlement import customer_predicate
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from c360.domain.enums import CustomerValue, DelinquencyStatus
     from c360.security.entitlement import EntitlementScope
 
 _GET = Statement(
@@ -182,7 +191,13 @@ def build_fts_query(raw: str) -> str | None:
     tokens = [token for token in raw.translate(_FTS_SYNTAX).split() if token]
     if not tokens:
         return None
-    return " ".join(f'"{token}"*' for token in tokens)
+    # Tokens are joined by OR (not implicit AND) so a natural-language phrase from the
+    # cross-customer Q&A agent — e.g. "Marta Farooqi standing" — still resolves the customer on the
+    # name tokens instead of AND-matching to zero because a non-name word ("standing") is not in any
+    # row. FTS5 BM25 ranking floats the row matching the most tokens to the top, so a full-name
+    # query still ranks the right customer first. The UI identifier search (name, id, account,
+    # card-4) also benefits: a partial multi-token entry no longer requires every token to hit.
+    return " OR ".join(f'"{token}"*' for token in tokens)
 
 
 _COUNT = Statement(
@@ -190,6 +205,64 @@ _COUNT = Statement(
     collection="customer",
     sql="SELECT COUNT(*) FROM customer",
 )
+
+# Book-level cohort listing (cross-customer Q&A, "high risk customers", "my platinum clients").
+# Unlike search this is not FTS: it filters and ranks the entitled book by the coarse, non-maskable
+# columns a cohort question names — risk band (derived from risk_score), segment, value tier and
+# delinquency status. The scope predicate is spliced in exactly as the search and listing do, before
+# ORDER BY and LIMIT, so a restricted book only ever surfaces its own customers and the count never
+# reveals an out-of-book match (requirement 3.3). The optional filters use the `:p IS NULL OR ...`
+# idiom so one statement serves a query with any subset of filters. `risk_band` is computed in the
+# SELECT via a CASE on risk_score so the caller sees the same LOW/MODERATE/ELEVATED/HIGH banding the
+# risk module derives, without a stored column. LEFT JOIN so a customer with no risk row still lists
+# (as an unscored, LOW-band member) rather than silently dropping out of a segment/value cohort.
+_COHORT_SCOPED_TEMPLATE = """
+    SELECT c.customer_id, c.customer_name, c.customer_segment,
+           c.customer_value, c.customer_value_score,
+           rp.risk_score,
+           CASE
+             WHEN rp.risk_score IS NULL OR rp.risk_score < {moderate} THEN 'LOW'
+             WHEN rp.risk_score < {elevated} THEN 'MODERATE'
+             WHEN rp.risk_score < {high} THEN 'ELEVATED'
+             ELSE 'HIGH'
+           END AS risk_band,
+           rp.delinquency_status
+    FROM customer c
+    LEFT JOIN risk_profile rp ON rp.customer_id = c.customer_id
+    WHERE ({scope})
+      AND (:min_risk_score IS NULL OR rp.risk_score >= :min_risk_score)
+      AND (:max_risk_score IS NULL OR rp.risk_score < :max_risk_score)
+      {segment_filter}
+      {value_filter}
+      {delinquency_filter}
+    ORDER BY {order_by}
+    LIMIT :limit
+    """
+
+# Band-score boundaries duplicated from RiskService._band_for (services/risk.py) rather than
+# imported so the repository does not depend up onto the service layer. Same 0..100 cut points
+# (LOW < 25, MODERATE < 50, ELEVATED < 75, HIGH >= 75); a change in one place must change both.
+_BAND_MODERATE_MIN = 25.0
+_BAND_ELEVATED_MIN = 50.0
+_BAND_HIGH_MIN = 75.0
+
+
+def _in_filter(
+    column: str, name: str, values: Sequence[object] | None
+) -> tuple[str, dict[str, object]]:
+    """Render an optional ``AND column IN (...)`` fragment and its bindings, or an empty fragment.
+
+    A ``None`` or empty filter contributes no SQL and no params, so an unfiltered cohort query is
+    the base statement with nothing spliced in. A non-empty filter becomes a parameterized ``IN``
+    list via :func:`expand_in_clause` — placeholders generated, values bound — so the fragment is
+    safe to interpolate into the statement template. Enum values are coerced to their string form so
+    a :class:`~enum.StrEnum` member binds as the stored text.
+    """
+    if not values:
+        return "", {}
+    coerced = [str(value) for value in values]
+    placeholders, bindings = expand_in_clause(name, coerced)
+    return f"AND {column} IN ({placeholders})", bindings
 
 
 class SqliteCustomerRepository(SqliteRepository):
@@ -318,3 +391,71 @@ class SqliteCustomerRepository(SqliteRepository):
         params = {"match": match, "limit": limit, "after": after, **predicate.params}
         rows = self.fetch_all(statement, params)
         return to_models(CustomerSearchHit, rows)
+
+    def cohort_scoped(
+        self,
+        scope: EntitlementScope,
+        *,
+        min_risk_score: float | None = None,
+        max_risk_score: float | None = None,
+        segments: Sequence[CustomerValue] | Sequence[str] | None = None,
+        values: Sequence[CustomerValue] | Sequence[str] | None = None,
+        delinquency_statuses: Sequence[DelinquencyStatus] | Sequence[str] | None = None,
+        order_by_risk_desc: bool = True,
+        limit: int,
+    ) -> Sequence[CustomerCohortHit]:
+        """A ranked, entitlement-scoped cohort of the book by risk / segment / value / delinquency.
+
+        Every filter is optional and folded into one statement with the ``:p IS NULL OR ...`` idiom
+        (for the score bounds) or a spliced ``IN`` list (for the enum filters), so a caller asking
+        only for "high risk" and a caller asking for "platinum small-business clients current on
+        payments" both run this one query. The scope predicate is evaluated before ``LIMIT`` as the
+        search and listing paths do, so a restricted book can never surface a customer outside it
+        and the row count never leaks an out-of-book match (requirement 3.3).
+
+        ``segments``/``values``/``delinquency_statuses`` are turned into parameterized ``IN`` lists
+        by :func:`expand_in_clause` — the placeholders are generated, never the values — so this
+        stays free of string-built SQL in the injection sense. Ranking is by risk score (descending
+        for "highest risk first", the common cohort ask) or by customer value score, with the
+        customer id as a stable tiebreaker so the order is reproducible.
+        """
+        if limit < 1:
+            raise ValueError(f"limit must be at least 1, got {limit}")
+        predicate = customer_predicate(
+            scope, id_column="c.customer_id", segment_column="c.customer_segment"
+        )
+        params: dict[str, object] = {
+            "min_risk_score": min_risk_score,
+            "max_risk_score": max_risk_score,
+            "limit": limit,
+            **predicate.params,
+        }
+        segment_filter, seg_params = _in_filter("c.customer_segment", "seg", segments)
+        value_filter, val_params = _in_filter("c.customer_value", "val", values)
+        delinquency_filter, delq_params = _in_filter(
+            "rp.delinquency_status", "delq", delinquency_statuses
+        )
+        params.update(seg_params)
+        params.update(val_params)
+        params.update(delq_params)
+        order_by = (
+            "rp.risk_score DESC, c.customer_id"
+            if order_by_risk_desc
+            else "c.customer_value_score DESC, c.customer_id"
+        )
+        statement = Statement(
+            id="customer.cohort_scoped",
+            collection="customer",
+            sql=_COHORT_SCOPED_TEMPLATE.format(
+                scope=predicate.sql,
+                segment_filter=segment_filter,
+                value_filter=value_filter,
+                delinquency_filter=delinquency_filter,
+                order_by=order_by,
+                moderate=_BAND_MODERATE_MIN,
+                elevated=_BAND_ELEVATED_MIN,
+                high=_BAND_HIGH_MIN,
+            ),
+        )
+        rows = self.fetch_all(statement, params)
+        return to_models(CustomerCohortHit, rows)

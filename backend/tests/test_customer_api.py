@@ -310,6 +310,9 @@ class TestContract:
         "/customers/{customer_id}/engagement",
         "/customers/{customer_id}/offers",
         "/customers/{customer_id}/signals",
+        # Revenue plays (Phase 22). Listed here so adding a revenue route is a deliberate contract
+        # change rather than something that appears in the spec unnoticed.
+        "/customers/{customer_id}/revenue/fee-recovery",
         "/signals",
         "/signals/{signal_id}/dismiss",
         "/signals/{signal_id}/ack",

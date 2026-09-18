@@ -48,6 +48,7 @@ from c360.api.routes import (
     knowledge,
     me,
     reports,
+    revenue,
     signals,
 )
 from c360.api.services import dispose_services
@@ -207,6 +208,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(ask.router)
     app.include_router(signals.router)
     app.include_router(reports.router)
+    app.include_router(revenue.router)
 
     register_config_check(settings)
     register_audit_check(audit_writer)

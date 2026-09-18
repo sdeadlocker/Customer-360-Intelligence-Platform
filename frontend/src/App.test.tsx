@@ -212,7 +212,17 @@ describe('Phase 12 app shell', () => {
     // Log in as the RM role.
     await user.click(await screen.findByRole('button', { name: /relationship manager/i }));
 
-    // Land on search; type a query past the three-character threshold.
+    // Customer search is a collapsed launcher on the landing page; open it, then search. Wait for
+    // the closed section to render, then click its launcher (scoped, since the rail nav shares the
+    // name).
+    const closed = await waitFor(() => {
+      const node = document.querySelector('.collapsible--closed');
+      if (node === null) {
+        throw new Error('collapsed search section not yet rendered');
+      }
+      return node as HTMLElement;
+    });
+    await user.click(within(closed).getByRole('button'));
     const box = await screen.findByRole('combobox', { name: /find a customer/i });
     await user.type(box, 'Ada');
 

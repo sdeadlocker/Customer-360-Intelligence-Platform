@@ -47,6 +47,8 @@ export interface AskState {
   /** True while a turn is streaming; the composer disables send to keep one turn in flight. */
   readonly busy: boolean;
   readonly ask: (question: string) => void;
+  /** Clear the conversation and abort any in-flight stream (used when collapsing the panel). */
+  readonly reset: () => void;
 }
 
 /** A per-mount conversation session id; stable across turns, fresh on remount. */
@@ -160,7 +162,15 @@ export function useAskStream(customerId?: string): AskState {
     [busy, customerId, patch],
   );
 
-  return { turns, busy, ask };
+  const reset = useCallback((): void => {
+    controllerRef.current?.abort();
+    controllerRef.current = null;
+    sessionId.current = newSessionId();
+    setTurns([]);
+    setBusy(false);
+  }, []);
+
+  return { turns, busy, ask, reset };
 }
 
 function messageFor(cause: unknown, customerScoped: boolean): string {

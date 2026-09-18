@@ -1068,6 +1068,41 @@ The tasks below assume **path A** unless a task says otherwise; each notes where
 > noted, partially applied. Bedrock model access is confirmed (Titan v2 + Claude Haiku 4.5 reachable); the
 > earlier ECR-policy gap is resolved (the deployer can create/list ECR repos).
 
+> **UPDATE — a live deployment WAS achieved via a manual (non-Terraform) path.** Because the original
+> deploy host had no Docker and the SSO permission set blocked App Runner, the platform was instead built
+> and deployed by hand from **AWS CloudShell** in region **`eu-north-1`** (not `us-east-1`), and verified
+> live end to end. This does **not** apply the authored Terraform under `deploy/`; it is a parallel, simpler
+> path-A deployment. The full step-by-step, pitfalls and scripts are captured in
+> [`DEPLOYMENT_RUNBOOK.md`](../../../DEPLOYMENT_RUNBOOK.md). What was actually done:
+>
+> - **Build (CloudShell Docker):** slim multi-stage API image (`--target runtime`,
+>   `EMBED_DIMENSIONS=512`, ~405 MB) and the nginx `web` image. Fixed the container path bug where
+>   `PROJECT_ROOT` resolved to `/` (baked absolute `PROMPT_REGISTRY_PATH`, `COST_PRICE_TABLE_PATH`,
+>   `SQLITE_*`, `REPORTS_OUTPUT_DIR` env into the runtime stage).
+> - **Bedrock embeddings built out-of-band:** baking Titan embeddings inside the Docker build failed because
+>   CloudShell session tokens expire mid-build. Worked around it by running `seed`/`recompute`/
+>   `ingest-knowledge --provider bedrock --dimensions 512` inside the builder container against live creds,
+>   writing `customer.db` + `knowledge.db` (448 real Titan embeddings) to the host, then a
+>   `docker/Dockerfile.prebuilt` that just `COPY`s the finished DBs in (fully offline final build).
+> - **Registry:** both images pushed to ECR in `eu-north-1` (`c360-api:bedrock`, `c360-web:latest`).
+> - **IAM:** `c360EcsExecutionRole` (ECR pull + logs) and `c360EcsTaskRole` (inline `bedrock:*` invoke —
+>   the non-expiring credential source for live Bedrock calls).
+> - **Compute:** ECS Fargate cluster `c360`, a **two-container task** (`c360-full`: api + web sharing
+>   `localhost`, nginx proxying to `:8000`), launched with `run-task` and a public IP (no ALB/EFS/Terraform).
+> - **LLM fix:** Claude **Opus** could not be invoked on-demand (`ValidationException` → every card
+>   "Degraded"). Switched `BEDROCK_MODEL_ID` to the inference profile
+>   `eu.anthropic.claude-haiku-4-5-20251001-v1:0` (~1.4 s/call). Set `OTEL_SDK_DISABLED=true` to silence the
+>   collector-not-found log spam.
+> - **Verified live:** `/ready` all-pass (real Titan index, `model=eu.anthropic.claude-haiku-4-5...`,
+>   breaker closed); the Ask panel and dashboard AI cards return **real, grounded, cited Claude narratives**
+>   (no "Degraded"); role masking confirmed across seeded logins.
+>
+> **Gaps vs. the authored Terraform target (still open):** no ALB/HTTPS (raw public IP on 8000/8080, and the
+> IP changes on each `run-task`); no EFS (writable `/data` — audit/checkpoints/signals/reports — is
+> ephemeral); no ADOT→X-Ray/CloudWatch (telemetry disabled in the task); secrets not in Secrets Manager;
+> region is `eu-north-1`, not `us-east-1`. These are the production-hardening items in
+> `DEPLOYMENT_RUNBOOK.md` §8, and the reason the `[ ]` boxes below remain unchecked.
+
 - [ ] 20.1 Choose the compute target and record the decision
   - Compare ECS on Fargate (full control, load balancer, autoscaling) vs. App Runner (simplest, container +
     URL) vs. EKS (only if already standardized on Kubernetes) for the `api` and `web` containers
@@ -1145,6 +1180,11 @@ The tasks below assume **path A** unless a task says otherwise; each notes where
     answer streams end to end and a trace appears in X-Ray with no disallowed attributes
   - Document the deployed architecture, costs and operational runbook in `docs/deployment.md`
     (**runbook + architecture already written**; cost figures pending a real deploy)
+  - **Partial (via the manual CloudShell path, see the UPDATE note above):** the platform was reached at a
+    public URL, authenticated, serving entitlement-scoped masked data, with **real Bedrock (Claude Haiku 4.5)
+    narratives streaming end to end** and `/ready` all-pass. Still open for this box: automated Playwright
+    journeys against the URL, and the **X-Ray trace check** (telemetry is disabled in the manual task, so no
+    trace lands in X-Ray). The operational runbook is [`DEPLOYMENT_RUNBOOK.md`](../../../DEPLOYMENT_RUNBOOK.md).
   - _Requirements: all success criteria, 18.13_
 
 **Phase gate:** the platform is reachable at an HTTPS URL on AWS, authenticated, serving entitlement-scoped
@@ -1332,3 +1372,346 @@ data-table equivalents. Verified against the existing Vitest/RTL suites (all gre
   - The dashboard sits in a rounded surface panel on the soft canvas with a "need help?" sidebar block; the
     Ask-AI empty-state hero is compact (small illustration, tight padding, starter-prompt chips)
   - _Requirements: 16.1 · Design §11.7_
+
+---
+
+## Phase 22 — Revenue plays
+
+Four plays that turn something the deterministic layer already computes into a **priced opportunity**
+rather than an observation, because a dashboard that shows a signal gets read and a dashboard that
+shows a dollar gets acted on. Each play names a line a CFO owns:
+
+| Play | What it finds | P&L line |
+|---|---|---|
+| 4 — Wallet share | External holdings inferred from transaction footprints | AUM fees, loan balances |
+| 5 — Money in motion | Large inflows still inside the window where they can be retained | Deposits, AUM |
+| 6 — **Fee recovery** | Charges the bank earned but never collected | Fee income |
+| 8 — Economic profit | Risk-adjusted profit per customer, and the priced pipeline over the book | All |
+
+**Status, stated plainly.** Play 6 is delivered end to end — real detection over the customer
+database, a real endpoint, real masking, real audit. Plays 4, 5 and 8 exist as **UI only**: their
+panels render against a defined contract and, because the endpoints do not exist yet, fall back to
+illustrative fixtures behind a visible **Preview** badge and an explicit "these numbers are a layout
+preview" note (`frontend/src/features/revenue/previewData.ts`). Nothing in the platform presents an
+ungrounded figure as if it were grounded; the marker is asserted in the frontend tests so a refactor
+cannot quietly drop it.
+
+### Delivered — presentation
+
+- [x] 22.1 Revenue surfaces on the customer dashboard
+  - A new **Revenue** nav group, placed after Overview and before Intelligence: economic profit,
+    wallet share, money in motion, fee recovery. Each is a `ModuleState` card with the shared
+    loading / ready / restricted / error vocabulary
+  - Every chart carries a full data-table equivalent; a masked band string is rendered verbatim and
+    never plotted, because a band cannot be drawn to scale
+  - _Requirements: 4.3, 4.4, 5.1, 16.1, 16.2 · Design §11.7_
+
+- [x] 22.2 Revenue command centre on the landing page
+  - A full-width hero above the fold carrying the priced pipeline — identified, capturable, realized,
+    realization rate — with a per-play breakdown and an urgency strip that jumps to the
+    money-in-motion feed. The accent gradient is used only where no text sits on it, so no contrast
+    pairing depends on it
+  - _Requirements: 16.1, 16.1a, 16.2 · Design §11.7_
+
+- [x] 22.3 Landing page adopts the dashboard's left navigation rail
+  - The landing page grew to four substantial surfaces, so it reuses the `dash-nav` chrome and the
+    `dashboard__layout` grid: one navigation model across the app rather than two. No view modes here
+    — a daily briefing shows everything, so every section stays mounted and the rail is purely a
+    jump-to
+  - The universal Ask panel is **not** a nav section: it is pinned full width beneath the header,
+    exactly as the dashboard pins its customer-scoped Ask panel, so a plain-language question needs
+    no navigation at all. Asserted in `SearchPage.test.tsx`
+  - _Requirements: 3.1–3.6, 11.1, 16.1, 16.3 · Design §11.7_
+
+### Delivered — play 6, fee recovery, end to end
+
+- [x] 22.4 Make the corpus fee rules machine-readable
+  - `config/fee_schedule.json`: six deposit products in integer cents, every amount transcribed from
+    a product sheet's "Rates and Fees" table, each carrying the `doc_id` and `rule_basis` of the
+    document it came from so a finding cites the pricing document rather than asserting a number
+  - Products with no maintenance fee (CD-12M, CD-36M) are deliberately absent; absence means
+    "nothing billable here" and the scan raises no finding against them
+  - `FeeSchedule.from_file` **raises** on a missing or malformed file rather than degrading to an
+    empty table, the opposite of `CostEstimator`: an empty schedule would report no leakage, and "no
+    leakage" reads as good news, so a silent false negative is worse than a loud failure
+  - _Requirements: 17.1, 17.5 · Design §1.1, §9.2_
+
+- [x] 22.5 Seed fee postings **and deliberate leakage**
+  - The seeded dataset previously contained zero fee transactions, so the play had nothing to detect.
+    `generator/fees.py` now bills each cycle the schedule says is billable, and plants four defects on
+    purpose: a fee never posted, a fee posted then reversed every cycle, a grandfathered amount below
+    schedule, and a billable wire sent unbilled
+  - Same discipline as task 2.6 seeding life events "with corroborating transactions so agent
+    inferences are verifiable": a detector verified against clean data has never been tested
+  - A defect is planted only on an account that is plausibly billable, because a defect on a
+    permanently-waived account produces nothing any detector could find
+  - `FeeCoverage` is a population-level floor guaranteeing all four defects occur at any `--count`,
+    mirroring task 2.1's per-cohort minimum so no cohort rounds to zero
+  - Both sides call the same `WaiverRule.waives`, so the billing rule cannot drift between the
+    generator and the detector
+  - _Requirements: 14.1, 14.2, 14.7 · Design §15_
+
+- [x] 22.6 Implement the fee-leakage scan
+  - `services/fee_recovery.py` finds `MISSED_MINIMUM`, `LEGACY_PRICING`, `FEE_WAIVED` and
+    `UNBILLED_SERVICE`, each priced in integer cents and each citing its source document. Four SQL
+    aggregates and one scalar per customer, folded in SQLite rather than in Python
+  - Computed on demand over the read-only customer database: no detection job to schedule, no
+    writable store, nothing to invalidate
+  - **The as-of month is excluded.** A maintenance fee is assessed at cycle end, so the current month
+    cannot be "missing" one; including it manufactured a phantom unbilled cycle for every billable
+    account on the book. Guarded by a regression test
+  - **Stated limitation.** The schema carries a current balance and no historical balance series, so
+    no cycle's actual balance is knowable. The balance condition is evaluated against the account's
+    as-of balance and every affected finding says so in its evidence line. Where evidence is
+    ambiguous the scan declines to raise a finding — under-claiming is recoverable, presenting a bank
+    with fees it was not entitled to is not
+  - _Requirements: 5.2, 5.9, 14.6 · Design §1.1, §4.6_
+
+- [x] 22.7 Expose the endpoint, masked and audited
+  - `GET /customers/{id}/revenue/fee-recovery` in a new `revenue` router, following the customer-route
+    shape exactly: the 403-vs-404 gate, the blocking scan off the event loop, and `masked_envelope`
+    so the field-masking serializer cannot be skipped
+  - Recoverable amounts are registered in the field map as `BALANCES`/`CURRENCY`, so a role that sees
+    banded balances sees banded recoveries. `account_label` needs no rule because it is partial by
+    construction — product name plus the last four — so a full account number never reaches the
+    serializer, the same reasoning that keeps a full PAN off `CreditCard`
+  - Audited as `REVENUE_FEE_RECOVERY`. This is the first deterministic customer read that audits, and
+    deliberately so: its output is a list of charges someone is expected to act on. The record carries
+    the leak types found, never a monetary value
+  - A clean customer returns an empty view with zero totals, not a 404 — "nothing recoverable" is a
+    real answer and must not look like a missing customer
+  - _Requirements: 12.3, 12.4, 12.5, 12.6, 15.1–15.5_
+
+- [x] 22.8 Close the OpenAPI export gap
+  - `backend/scripts/export_openapi.py` plus `npm run openapi:export` / `openapi:sync`. The frontend
+    generates its typed client from a committed spec and fails the build on drift, but no script
+    existed to produce that spec — re-exporting meant starting the API and fetching `/openapi.json` by
+    hand, which is exactly how a new route stays invisible to the typed client
+  - _Requirements: 15.4_
+
+- [x] 22.9 Tests
+  - `backend/tests/test_fee_recovery.py` (31 cases): the schedule matches the product sheets and a
+    malformed one raises; the generator actually emitted each planted defect; the scan finds all four
+    leak types **and declines** to flag a legitimately waived cycle or a waiver run inside the
+    courtesy allowance; totals equal the sum of findings exactly; ordering is stable across repeated
+    scans; the customer database is proven read-only
+  - Endpoint cases: 401 unauthenticated, entitlement denial, 404 for a genuinely absent customer, a
+    banded role never receiving a raw amount, no full account number in any label, and the audit
+    record written with leak types and no monetary value
+  - The new path is registered in `TestContract._EXPECTED_PATHS`, so adding a revenue route is a
+    deliberate contract change
+  - _Requirements: 12.4, 12.6, 14.6, 15.4, 15.5_
+
+### Not started — plays 4, 5 and 8 backends
+
+- [ ] 22.10 Money-in-motion detection (play 5)
+  - Classify large inflows by likely source, compute the action window, and persist ack/dismiss state
+    in a new writable store. `GET /revenue/money-in-motion`, `POST .../{id}/ack`, `POST .../{id}/dismiss`
+  - _Requirements: 7.1–7.6, 8.1_
+
+- [ ] 22.11 Held-away asset inference (play 4)
+  - Mine recurring `txn.merchant` patterns for external brokerages, mortgages, cards and payroll;
+    size each as a capture target with a confidence and the observed pattern as its basis
+  - _Requirements: 5.9, 6.6_
+
+- [ ] 22.12 Economic profit and the opportunity pipeline (play 8)
+  - Per-customer risk-adjusted profit as new `derived_*` columns (NII spread, fees, interchange, less
+    cost to serve, expected credit loss and cost of capital), then the entitlement-scoped pipeline
+    aggregating all four plays with realization tracking
+  - _Requirements: 5.2, 5.11, 14.6_
+
+**Phase gate (play 6):** on the seeded book the Fee recovery card renders real grounded findings with
+no Preview badge — each priced in integer cents, citing the product sheet or waiver policy it is
+measured against, and showing the sentence that establishes it. A banded role sees banded amounts and
+`meta.masked_fields` explains the gap; the scan is audited; `customer.db` is never written.
+Reproduced live at 23 of 100 seeded customers carrying findings.
+
+
+---
+
+## Phase 23 — Voice assistant and landing-page navigation
+
+A presentation layer over the existing grounded Q&A, plus the landing-page navigation tidy that came
+with it. No change to the answer path: voice input only ever produces text that flows through the same
+claim-validated, entitlement-scoped pipeline a typed question does. Verified against the existing
+backend and frontend suites (all green) plus the new voice tests.
+
+### Voice assistant
+
+- [x] 23.1 Voice input (speech-to-text)
+  - `useSpeechInput` over the browser `SpeechRecognition` (vendor-prefixed; hidden on Firefox). A
+    microphone control on both Ask panels transcribes a spoken question into the composer, showing the
+    interim transcript as it is spoken. Opt-in, with a visible note that browser transcription may send
+    audio to the browser's provider
+  - _Requirements: 11.1, 19b.1, 19b.2, 19b.3_
+
+- [x] 23.2 Voice output (text-to-speech)
+  - `useSpeechOutput` reads a completed answer with `speechSynthesis`, off by default, choice persisted,
+    never speaking a refusal or a mid-stream partial. Exposes a live "mouth openness" signal the avatar
+    animates from
+  - _Requirements: 19b.4_
+
+- [x] 23.3 Assistant avatar
+  - `AssistantAvatar` shows a supplied headshot at `/assistant-avatar.png` when present, else an
+    illustrated portrait — a one-file swap, no code change. A still image, never a rendered video (no
+    third-party streaming service, no per-utterance network call); the lip-sync is driven by the same
+    synthesized speech the user hears, and state (idle / listening / thinking / speaking) reflects what
+    the assistant is actually doing. All motion suppressed under reduced-motion
+  - Placed in a contact-style left rail beside the chat (name, live status, a "Speak" pill), not a
+    full-width banner
+  - _Requirements: 19b.5, 19b.6, 19b.8_
+
+- [x] 23.4 Small talk in the mock provider
+  - `qa_mock` detects greetings, thanks and capability questions and answers them directly before any
+    customer resolution, so "hi" greets rather than replying "no matching customer". Deliberately narrow
+    so a real question is untouched; the replies carry no digits, since the claim validator rejects any
+    uncited number
+  - _Requirements: 11.1, 19b.7_
+
+### Landing-page navigation
+
+- [x] 23.5 Left navigation rail on the landing page
+  - The landing page adopts the dashboard's `dash-nav` rail — one navigation model across the app — with
+    the same scroll-to-section behaviour. No view modes: every section is always mounted and the rail is
+    purely a jump-to. The universal Ask panel is pinned above the rail, not a nav section, so a
+    plain-language question needs no navigation (requirement 11.1)
+  - _Requirements: 3.1–3.6, 11.1, 16.1, 16.3_
+
+- [x] 23.6 Collapsible customer search; worklist removed
+  - Customer search became a collapsible launcher that opens on click and folds away, so the tall
+    revenue sections stay in view without scrolling. The signals worklist was removed from the landing
+    page. Search leads the page as the most-used action; the revenue pipeline follows
+  - _Requirements: 3.1, 3.2_
+
+**Phase gate:** a spoken question dictates into the composer and returns the same grounded answer a
+typed one does; spoken replies read a completed answer aloud when enabled and never a refusal; the
+avatar shows the supplied headshot and its state tracks the conversation; a greeting is answered
+conversationally rather than run through customer search; on the landing page, customer search opens
+and collapses and the revenue sections remain visible. Every voice affordance is absent, not broken,
+on a browser without the API, and all motion honours reduced-motion.
+
+---
+
+## Phase 24 — Cohort and pitch questions in Ask AI
+
+Two new tools on the existing tool-calling Q&A graph so Ask AI answers the questions a relationship
+manager actually asks — about a *group* of customers, and "prepare me a pitch" — not only single-fact
+lookups. Both flow through the same claim-validated, entitlement-scoped pipeline the typed and spoken
+questions use; no grounding, masking or entitlement guarantee is affected, and no REST surface is
+added. Closes the gap where a book-level question ("high risk customers") answered "no matching
+customer was found" because the only cross-customer tool was a name resolver.
+
+- [x] 24.1 `customer_cohort` — book-level, entitlement-scoped listing
+  - `CustomerService.cohort` filters and ranks the entitled book **in SQL** (`customer LEFT JOIN
+    risk_profile`), with the entitlement predicate spliced before `LIMIT` exactly as search/listing do,
+    so a restricted book never surfaces an out-of-book customer and the count never leaks one. Filters
+    for risk band, segment, value tier and delinquency fold into one statement via `:p IS NULL OR ...`
+    bounds and parameterized `IN` lists; the risk band is computed in the `SELECT` by a `CASE` on
+    `risk_score` (25/50/75), since band is derived, not stored. A thin `CustomerCohortHit` carries
+    display-only, non-maskable columns; the tool builds no facts, mirroring `customer_search`
+  - _Requirements: 3.3, 11.5, 12.3, 19c.1, 19c.2, 19c.3_
+
+- [x] 24.2 "High risk" means the top of the distribution, not one band
+  - A bare "high risk" / "riskiest" question maps to a floor (`min_risk_band`) — the band and above —
+    not an exact band, so a legitimately empty top band (the seed reaches no HIGH-band customer) does
+    not read as broken. An explicit middle band ("moderate risk customers") still maps to that exact band
+  - _Requirements: 19c.4_
+
+- [x] 24.3 `pitch` — grounded talking points for one customer
+  - Composes, not re-reads: the same offer, financial and risk service calls the individual tools use,
+    assembled into three sections (recommended offers with rationale, headline financial position, risk
+    and compliance flags). Every figure is masked per role exactly as the underlying reads and cited by
+    an `F`-id, so a role that cannot see a balance or an offer value never gets it in a talking point and
+    the answer passes the same claim validator the live path does
+  - _Requirements: 11.6, 19c.5, 19c.6_
+
+- [x] 24.4 Mock provider routing and rendering
+  - The mock detects a cohort question from collective keywords and calls `customer_cohort` (with filters
+    parsed from the question) instead of running the name resolver to a "no match"; pitch keywords route
+    to `pitch`. The renderer formats a cohort as a ranked member list and a pitch as three cited sections.
+    Cohort headers carry no bare digit (the claim validator rejects uncited numbers); pitch figures come
+    from the fact block so they cite cleanly
+  - _Requirements: 11.1, 19c.1, 19c.5, 19c.7_
+
+- [x] 24.5 Picker-only turns skip numeric claim validation
+  - A cohort answer is a list of identifiers whose id-shaped digits ("C-00002") are not figures. A turn
+    whose reading tools are all pickers (resolver/cohort) skips `validate_claims`, so the identifiers are
+    not mistaken for uncited figures and the answer is not degraded. A pitch is not picker-only — it
+    carries facts and is validated normally
+  - _Requirements: 19c.2, 19c.3_
+
+- [x] 24.6 Both surfaces, one graph; tests and gates
+  - Both tools are registered in the one registry the graph binds, so they behave identically on the
+    universal Ask and a customer's dashboard Ask; the only difference is the `customer_id` framing the
+    graph already sets. Backend tests cover cohort scoping/filters and pitch masking/citation, plus
+    graph-level cohort and pitch questions. `RiskBand` moved to the domain enums (derived-enum exemption
+    recorded); `CustomerCohortHit` recorded as a provenance-exempt picker projection. Full backend gate
+    green (black, ruff, mypy, pytest ≥85% coverage, `filterwarnings=error`); frontend `check` and `build`
+    green with no OpenAPI change (no REST endpoint added)
+  - _Requirements: 19c.7_
+
+**Phase gate:** on the universal Ask, "tell me about high risk customers" returns a ranked list of the
+entitled book's riskiest customers rather than "no matching customer was found"; "which of my clients
+are past due" lists the delinquent members; "prepare me a pitch for this customer" (or "what should I
+tell this customer") on a dashboard returns a grounded, cited briefing of offers, financial position
+and risk. Every result stays entitlement-scoped and masked per role, and nothing about the existing
+single-fact, greeting or knowledge paths regresses.
+
+---
+
+## Phase 25 — Conversational refinement, live generation and Ask AI presentation
+
+Refines Phase 24: makes Ask AI feel like a real conversation (follow-ups that refine the last
+question, value/profit intents, a proper chat thread), ships live Amazon Bedrock generation, and makes
+the deterministic fallback readable. All on the same claim-validated, entitlement-scoped graph — no
+new REST surface, no grounding/masking/entitlement change.
+
+- [x] 25.1 Cohort follow-up continuation on the mock
+  - `qa_mock` recognises a refinement of a cohort already in the conversation: if a `customer_cohort`
+    result appears in the history and the current message carries a cohort filter word (risk term,
+    segment, value tier, delinquency), it continues the cohort instead of running `customer_search` to
+    a "no match". The mock's stand-in for the conversational memory a live model gets from the history
+  - _Requirements: 19d.1_
+
+- [x] 25.2 Value/profit and risk-intent defaults
+  - A value/profit question with no filter ("most valuable customer", "who can give me the most
+    profit", "who should I pitch") routes to an unfiltered `customer_cohort`, which the service ranks by
+    `customer_value_score` descending; the tool description states this so the live model does the same.
+    A risk question with no explicit band ("rising risk", "at risk") maps to `min_risk_band=ELEVATED`
+    rather than listing the whole book
+  - _Requirements: 19d.2, 19d.3_
+
+- [x] 25.3 Readable deterministic fallback
+  - `_grounded_fallback` renders each fact with a human label and money as dollars (`Net worth:
+    $12,910,287.50 [F3]`), still citing every figure by its `F`-id, replacing the raw
+    `field_cents: 12345` dump. Shown when live generation is unavailable or the model's prose failed
+    claim validation; the fallback text is not re-validated, so dollar formatting is safe
+  - _Requirements: 19d.4_
+
+- [x] 25.4 Live Amazon Bedrock generation
+  - `LLM_PROVIDER=bedrock` with a `BEDROCK_MODEL_ID` narrates through the Converse API; current Claude
+    models are invoked via a cross-region inference profile (the `us.` prefix). Credentials come from
+    the standard AWS credential chain, never from `.env`. The generation circuit breaker falls back to
+    the deterministic provider on a Bedrock outage or expired token rather than failing the request. A
+    price-table entry for the model gives cost attribution. Verified end to end against the live model
+  - _Requirements: 19d.5_
+
+- [x] 25.5 Ask AI chat thread and formatting (frontend)
+  - The Ask panel is a scrolling thread: turns accumulate, the log auto-scrolls to the newest message,
+    and the composer clears after each send (including the starter-prompt chips). A collapse control
+    closes the panel back to its launcher, clearing the thread and aborting any in-flight stream. Answer
+    text renders `**bold**` as emphasis and preserves line breaks (`white-space: pre-wrap`), so a cohort
+    list is one customer per line and names are bold, not literal asterisks
+  - _Requirements: 19d.6, 19d.7_
+
+- [x] 25.6 Gates
+  - Full backend gate green (black, ruff, mypy, pytest ≥85% coverage, `filterwarnings=error`); frontend
+    `check` and `build` green. No OpenAPI change (no REST endpoint added). Documentation-only artefacts
+    (README, screenshots guide, licence, telemetry `.env` toggles) are not spec-tracked
+  - _Requirements: 19d.1–19d.7_
+
+**Phase gate:** a cohort follow-up ("only high risk") continues the prior cohort; "who is my most
+valuable customer" returns the value-ranked book; "rising risk" returns the riskiest cohort, not
+everyone; a degraded answer reads in dollars with labels and citations, not raw cents; with Bedrock
+configured the answers are model-narrated and fall back cleanly when it is unavailable; and the Ask
+panel is a scrolling, collapsible chat thread that renders emphasis and line breaks.

@@ -53,10 +53,17 @@ from datetime import date
 from typing import Final
 
 from c360.domain.enums import AccountStatus, AccountType, LifeEventType
+from c360.domain.fees import FeeSchedule, ProductFeeRule, default_schedule_path
 from c360.domain.money import Bps, Cents
 from c360.generator import vocab
 from c360.generator.adversarial import adversarial_merchant
 from c360.generator.context import GeneratorContext
+from c360.generator.fees import (
+    FeeCoverage,
+    emit_fee_cycle,
+    emit_wire_activity,
+    plan_account_fees,
+)
 from c360.generator.plan import AccountRecord, CustomerPlan, PlannedLifeEvent, Population
 from c360.generator.tables import TXN, Dataset
 
@@ -206,6 +213,25 @@ class _TxnWriter:
             ),
         )
         return transaction_id
+
+
+def _relationship_balance(plan: CustomerPlan) -> Cents:
+    """Deposits plus investments — the "relationship balance" a premier waiver is tested against.
+
+    Defined by ``pol-deposit-account`` as the sum of eligible deposit and investment balances, and
+    computed here exactly as :mod:`c360.generator.profiles` computes ``total_deposits_cents`` and
+    ``total_investments_cents`` (closed accounts excluded, balances as-is). The detector reads those
+    two derived columns, so keeping the arithmetic identical is what stops the generator from
+    billing a cycle the detector believes was waived — a divergence there would manufacture false
+    findings.
+    """
+    total = Cents(0)
+    for account in plan.accounts:
+        if account.status is AccountStatus.CLOSED:
+            continue
+        if account.account_type in (AccountType.DEPOSIT, AccountType.INVESTMENT):
+            total += account.balance
+    return total
 
 
 def _income_scale_bps(plan: CustomerPlan) -> Bps:
@@ -554,15 +580,31 @@ def _emit_corroboration(
             event.signals.append(f"{plan.customer_id}-SALARY-{months[index]:%Y-%m}")
 
 
-def generate_transactions(ctx: GeneratorContext, population: Population, dataset: Dataset) -> None:
+def generate_transactions(
+    ctx: GeneratorContext,
+    population: Population,
+    dataset: Dataset,
+    *,
+    fee_schedule: FeeSchedule | None = None,
+) -> None:
     """Emit every customer's transaction history and record the derived monthly expense.
 
     Writes ``txn`` rows straight into ``dataset`` rather than staging them on the plan: at ~200 per
     customer this is the only table where holding a second copy in memory would be worth avoiding,
     and
     nothing downstream needs to read individual transactions back.
+
+    ``fee_schedule`` supplies the deposit pricing that :mod:`c360.generator.fees` bills against,
+    defaulting to the committed schedule. A schedule that cannot be read raises rather than
+    degrading to "no fees": a seeded dataset silently missing its fee postings would make the
+    fee-recovery play report no leakage, which reads as good news instead of as a broken seed.
     """
     months = ctx.history_months()
+    schedule = fee_schedule or FeeSchedule.from_file(default_schedule_path())
+    fee_rules: dict[str, ProductFeeRule] = dict(schedule.products)
+    # Population-level floor: guarantees each planted fee defect occurs at least once, however small
+    # `--count` is, so no detector is left with nothing to find (see generator.fees.FeeCoverage).
+    fee_coverage = FeeCoverage.create()
 
     for plan in population.customers:
         writer = _TxnWriter(dataset, plan)
@@ -582,6 +624,17 @@ def generate_transactions(ctx: GeneratorContext, population: Population, dataset
         recurring = _pick_recurring(ctx)
         spend_low, spend_high = _SPEND_RATE_PERCENT[plan.cohort.value]
         spend_rate = Bps(ctx.integer((spend_low, spend_high)) * 100)
+
+        # Fee behaviour is settled per account before the month loop, because leakage is a property
+        # of a mispriced account that persists, not a per-cycle coin flip (see generator.fees).
+        relationship_balance = _relationship_balance(plan)
+        fee_plans = plan_account_fees(
+            ctx,
+            plan,
+            fee_rules,
+            relationship_balance_cents=relationship_balance,
+            coverage=fee_coverage,
+        )
 
         anomaly_indices: list[int] = []
         if ctx.chance(_ANOMALY_CUSTOMER_PERCENT):
@@ -634,6 +687,24 @@ def generate_transactions(ctx: GeneratorContext, population: Population, dataset
             # very anomaly the spike was injected to expose.
             expense_total += base_budget
             expense_months += 1
+
+            # ---------------------------------------------------------------- fees (Phase 22)
+            # Emitted last in the cycle so the month's qualifying credit is already decided: the
+            # waiver test reads it, and `salary[index]` is exactly what _emit_income posted.
+            for fee_plan in fee_plans:
+                emit_fee_cycle(
+                    ctx,
+                    writer,
+                    fee_plan,
+                    month_start=month_start,
+                    monthly_credit_cents=(
+                        salary[index] if fee_plan.account is deposit else Cents(0)
+                    ),
+                    relationship_balance_cents=relationship_balance,
+                )
+                emit_wire_activity(
+                    ctx, writer, fee_plan, month_start=month_start, coverage=fee_coverage
+                )
 
         # ---------------------------------------------------------------- life-event evidence
         for event in plan.life_events:

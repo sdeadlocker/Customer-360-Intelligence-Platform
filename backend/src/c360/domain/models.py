@@ -178,6 +178,29 @@ class CustomerSearchHit(DomainModel):
     city: str | None = None
 
 
+class CustomerCohortHit(DomainModel):
+    """One row of a book-level cohort query (cross-customer Q&A, "high risk customers").
+
+    Deliberately thin, like :class:`CustomerSearchHit`: a cohort answer is a ranked *list* of
+    customers matching a criterion (a risk band, a segment, a value tier, a delinquency status), not
+    a set of profiles. It carries only the display and ranking columns the list needs — the id and
+    name to identify each customer, and the coarse, non-maskable band/segment/value/delinquency
+    columns the query filtered and ranked on. ``risk_band`` is the derived bucket, not a stored
+    column; the repository computes it from ``risk_score`` in the SELECT so a caller sees the same
+    banding the risk module shows. No raw balances ride this path, so nothing here is maskable and
+    the whole row is safe to display in a cohort list a relationship manager scans.
+    """
+
+    customer_id: str
+    customer_name: str
+    customer_segment: CustomerSegment
+    customer_value: CustomerValue
+    customer_value_score: float | None = None
+    risk_score: float | None = None
+    risk_band: str
+    delinquency_status: DelinquencyStatus | None = None
+
+
 class ContactInfo(SourcedModel):
     """``contact_info``. Every field here is masked for at least one role (design §7.2)."""
 

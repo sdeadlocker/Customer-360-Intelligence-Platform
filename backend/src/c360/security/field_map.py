@@ -126,6 +126,19 @@ _RULES: Final[dict[str, dict[str, FieldRule]]] = {
     "SignalModel": {
         "value_at_stake_cents": FieldRule(FieldGroup.BALANCES, MaskStyle.CURRENCY),
     },
+    # Fee recovery (Phase 22 play 6). The recoverable amounts are balances in every sense that
+    # matters to the policy matrix, so a role that sees banded balances sees banded recoveries. Note
+    # what is *not* here: `account_label` needs no rule because it is partial by construction
+    # (product name plus the last four), so the full account number never reaches the serializer at
+    # all — the same reasoning that keeps a full PAN off `CreditCard`.
+    "FeeRecoveryResponse": {
+        "monthly_recoverable_cents": FieldRule(FieldGroup.BALANCES, MaskStyle.CURRENCY),
+        "annualized_recoverable_cents": FieldRule(FieldGroup.BALANCES, MaskStyle.CURRENCY),
+    },
+    "FeeFindingModel": {
+        "monthly_cents": FieldRule(FieldGroup.BALANCES, MaskStyle.CURRENCY),
+        "annualized_cents": FieldRule(FieldGroup.BALANCES, MaskStyle.CURRENCY),
+    },
 }
 
 

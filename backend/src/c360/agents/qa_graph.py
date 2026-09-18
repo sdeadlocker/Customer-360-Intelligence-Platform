@@ -76,6 +76,12 @@ _TRACER_NAME = "c360.agents.qa"
 #: The message role marking the loop's final answer once validated.
 _ASSISTANT = "assistant"
 
+#: Tools whose answer lives in a structured ``data`` payload (not only in facts), which must be
+#: forwarded to the model as a ``DATA:`` block: the cross-customer resolver's matches, the cohort's
+#: ranked members, and the pitch's offer/financial/risk sections. A citeable figure inside any of
+#: these still travels as an F-id'd fact for the claim validator; the ``data`` carries the shape.
+_DATA_FORWARDING_TOOLS = frozenset({"customer_search", "customer_cohort", "pitch"})
+
 #: The refusal a non-entitled request receives, disclosing nothing about the customer (11.6).
 REFUSAL_TEXT = "I can't share information about that customer."
 #: The out-of-scope reply when the model produced neither a tool call nor grounded content.
@@ -391,10 +397,12 @@ class QaGraph:
             remap = accumulator.add_facts(facts)
             merged = _remap_fact_table(facts, remap)
         data = _traversal_data(call, result, accumulator)
-        if data is None and call.name == "customer_search":
-            # The resolver's payload is not facts or a traversal path — it is the list of matched
-            # customers the agent must read to pick a customer_id (task 9.6). Forward it as DATA so
-            # the model (and the mock) can carry the resolved id into the reading tools.
+        if data is None and call.name in _DATA_FORWARDING_TOOLS:
+            # These tools carry their answer in a structured ``data`` payload rather than only in
+            # facts: customer_search returns the matched customers the agent reads to pick an id
+            # (task 9.6); customer_cohort returns the ranked cohort members; pitch returns the
+            # offer/financial/risk sections. Forward it as DATA so the model — and the mock's
+            # renderer — can shape it, while any citeable figures still travel as F-id'd facts.
             data = getattr(result, "data", None)
         content = encode_tool_result(facts=merged, data=data)
         return QaMessage(role="tool", content=content, tool_call_id=call.call_id, name=call.name)
@@ -434,11 +442,17 @@ class QaGraph:
         # Carry any degraded flag a prior turn set (e.g. a provider fallback in `_qa_agent`), so a
         # deterministic-fallback answer stays badged even if validation itself is clean.
         degraded = bool(state.get("degraded", False))
+        picker_only = _is_picker_only_turn(messages)
         if no_guidance and not facts.facts:
             # Knowledge was consulted and returned nothing, and there are no customer facts to fall
             # back on: give the canonical "no supporting guidance" reply (requirement 17.10) rather
             # than whatever phrasing the model produced.
             answer = NO_GUIDANCE_TEXT
+        elif picker_only and answer.strip():
+            # A resolver/cohort answer is a list of customers to pick from — its id-shaped digits
+            # are identifiers, not figures, and entitlement was enforced in the tool. The numeric
+            # claim validator does not apply; ship the answer as produced.
+            pass
         elif answer.strip():
             verdict = validate_claims(answer, facts)
             if not verdict.ok:
@@ -619,13 +633,85 @@ def _knowledge_requested(messages: Sequence[QaMessage]) -> bool:
     )
 
 
+#: Picker tools whose answer is a list of *identifiers* (customer ids/names), not financial figures.
+#: A cohort or resolver answer legitimately contains id-shaped digit tokens ("C-00002") that carry
+#: no F-id and are not claims a fact must back, so the numeric claim validator must not run over an
+#: answer whose only reading tool was one of these — it would flag the ids as uncited figures.
+_PICKER_TOOLS = frozenset({"customer_search", "customer_cohort"})
+
+
+def _is_picker_only_turn(messages: Sequence[QaMessage]) -> bool:
+    """Whether every reading tool in the turn was a picker (resolver/cohort), so no figures ran.
+
+    True only when at least one picker tool returned and no other reading tool (financial, risk,
+    offers, knowledge, ...) did. Such an answer is a list of customers to choose from, validated by
+    entitlement in the tool, not a figures narrative the claim validator governs.
+    """
+    reading = [
+        message.name for message in messages if message.role == "tool" and message.name is not None
+    ]
+    if not reading:
+        return False
+    return all(name in _PICKER_TOOLS for name in reading)
+
+
+#: Field name -> human label for the deterministic fallback. Anything not listed falls back to a
+#: title-cased version of the field name with the ``_cents`` suffix dropped.
+_FACT_LABELS: dict[str, str] = {
+    "net_worth_cents": "Net worth",
+    "total_deposits_cents": "Deposits",
+    "total_loans_cents": "Loans",
+    "total_investments_cents": "Investments",
+    "total_assets_cents": "Total assets",
+    "total_liabilities_cents": "Total liabilities",
+    "monthly_income_cents": "Monthly income",
+    "monthly_expense_cents": "Monthly expenses",
+    "expected_value_cents": "Offer expected value",
+    "credit_exposure_cents": "Credit exposure",
+    "fico_score": "FICO score",
+    "risk_score": "Risk score",
+    "band": "Risk band",
+    "delinquency_status": "Delinquency status",
+    "customer_name": "Name",
+    "customer_segment": "Segment",
+    "customer_value": "Value tier",
+}
+
+
+def _fact_label(field: str) -> str:
+    """A readable label for a fact field, e.g. ``net_worth_cents`` -> ``Net worth``."""
+    if field in _FACT_LABELS:
+        return _FACT_LABELS[field]
+    return field.removesuffix("_cents").replace("_", " ").capitalize()
+
+
+def _format_fact_value(field: str, value: object) -> str:
+    """Render a fact value for display: money fields as dollars, everything else as-is.
+
+    A ``*_cents`` field is integer cents, so it is shown as a dollar amount with thousands
+    separators; the citation that follows still binds the figure to the fact, so the answer stays
+    grounded even though the *displayed* form is dollars rather than raw cents.
+    """
+    if field.endswith("_cents") and isinstance(value, (int, float)):
+        return f"${int(value) / 100:,.2f}"
+    return str(value)
+
+
 def _grounded_fallback(facts: FactTable, accumulator: QaAccumulator) -> str:
-    """A deterministic answer listing the returned facts, each cited — never an invented figure."""
+    """A deterministic, readable answer listing the returned facts, each cited.
+
+    Never invents a figure: every value is a returned fact, shown with a human label and (for money)
+    in dollars, followed by its ``[F]`` citation. This is the answer served when live generation is
+    unavailable or the model's prose failed claim validation — grounded and legible, not a raw dump
+    of ``field_cents: 12345`` rows.
+    """
     if not facts.facts:
         return NO_GUIDANCE_TEXT
-    lines = ["Based on the customer's record:"]
+    lines = ["Here is what the records show:"]
     for fact in facts.facts:
-        lines.append(f"- {fact.field}: {fact.value} [{fact.fact_id}]")
+        label = _fact_label(fact.field)
+        value = _format_fact_value(fact.field, fact.value)
+        lines.append(f"- {label}: {value} [{fact.fact_id}]")
     return "\n".join(lines)
 
 

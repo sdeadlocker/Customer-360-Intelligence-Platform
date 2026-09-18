@@ -1,7 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { CitationList } from './AiChrome';
 import { useAskStream, type Turn } from './useAskStream';
+import { AssistantAvatar, type AvatarState } from './voice/AssistantAvatar';
+import { useSpeechInput } from './voice/useSpeechInput';
+import { useSpeechOutput } from './voice/useSpeechOutput';
 
 /**
  * The ask-anything panel (task 14.5/9.6, requirements 11.1–11.9, 17.10).
@@ -33,11 +36,75 @@ export function AskPanel({
   /** When true, the panel starts as a slim launcher bar and expands on click (dashboard use). */
   readonly collapsible?: boolean;
 }): React.JSX.Element {
-  const { turns, busy, ask } = useAskStream(customerId);
+  const { turns, busy, ask, reset } = useAskStream(customerId);
   const [draft, setDraft] = useState('');
   const [expanded, setExpanded] = useState(!collapsible);
   const announcement = useAnswerAnnouncement(turns, busy);
   const crossCustomer = customerId === undefined;
+
+  // The scrolling conversation log. As turns are added and the answer streams in, keep the newest
+  // content in view so the user reads the latest message rather than being stranded at the top.
+  const logRef = useRef<HTMLDivElement | null>(null);
+  const lastTurn = turns[turns.length - 1];
+  useEffect(() => {
+    const log = logRef.current;
+    if (log !== null) {
+      log.scrollTop = log.scrollHeight;
+    }
+  }, [turns.length, lastTurn?.answer, busy]);
+
+  // The voice layer (Phase 23). Both are feature-detected: on a browser without the API the hook
+  // reports `supported: false` and the affordance is simply not rendered.
+  const voiceIn = useSpeechInput();
+  const voiceOut = useSpeechOutput();
+
+  // Collapse the panel back to its launcher: clear the conversation and any in-flight stream, and
+  // return to the slim closed state. Only meaningful when the panel is collapsible.
+  const collapse = (): void => {
+    voiceIn.stop();
+    voiceOut.cancel();
+    reset();
+    setExpanded(false);
+  };
+
+  // Speak each answer once, when it settles — never mid-stream (which would stutter), and only the
+  // newest turn (so re-renders do not re-speak history). Tracked by turn id.
+  const spokenTurnRef = useRef<number | null>(null);
+  const latest = turns[turns.length - 1];
+  useEffect(() => {
+    // Speak only when output is on. The "already spoken" ref is set only after a real utterance, so
+    // toggling voice on *after* an answer has landed still speaks that answer (the ref was never
+    // marked while output was off).
+    if (
+      voiceOut.enabled &&
+      latest?.status === 'complete' &&
+      !latest.refused &&
+      latest.answer !== '' &&
+      spokenTurnRef.current !== latest.id
+    ) {
+      spokenTurnRef.current = latest.id;
+      voiceOut.speak(latest.answer);
+    }
+  }, [latest, voiceOut]);
+
+  // The avatar's state is the conversation's state: listening to the mic wins, then a streaming
+  // answer is "thinking", then a spoken reply is "speaking", else at rest.
+  const avatarState: AvatarState =
+    voiceIn.state === 'listening'
+      ? 'listening'
+      : busy
+        ? 'thinking'
+        : voiceOut.state === 'speaking'
+          ? 'speaking'
+          : 'idle';
+
+  const startDictation = (): void => {
+    // Speaking and listening at once would feed the reply back into the mic, so silence output first.
+    voiceOut.cancel();
+    voiceIn.start((text) => {
+      setDraft(text);
+    });
+  };
 
   // Once a conversation exists, keep the panel open.
   const open = expanded || turns.length > 0;
@@ -58,10 +125,12 @@ export function AskPanel({
           </span>
           <span className="ask-launcher__text">
             <span id="ask-panel-title" className="ask-launcher__title">
-              Ask anything about this customer
+              {crossCustomer ? 'Ask anything across your book' : 'Ask anything about this customer'}
             </span>
             <span className="ask-launcher__hint">
-              Finances, risk, relationships, eligibility — grounded, with sources
+              {crossCustomer
+                ? 'Any customer you are entitled to — insights, risks, finances, eligibility'
+                : 'Finances, risk, relationships, eligibility — grounded, with sources'}
             </span>
           </span>
           <span className="ask-launcher__cta" aria-hidden="true">
@@ -84,21 +153,38 @@ export function AskPanel({
 
   return (
     <section className="module ask-panel" aria-labelledby="ask-panel-title">
-      <div className="module__head">
+      <div className="module__head ask-panel__head">
         <h2 id="ask-panel-title" className="module__title">
           Ask anything
         </h2>
-        {collapsible && turns.length === 0 && (
-          <button
-            type="button"
-            className="button button--subtle ask-panel__collapse focus-ring"
-            onClick={() => {
-              setExpanded(false);
-            }}
-          >
-            Collapse
-          </button>
-        )}
+        <div className="ask-panel__head-actions">
+          {voiceOut.supported && (
+            <button
+              type="button"
+              className={`ask-voice-toggle focus-ring${voiceOut.enabled ? ' ask-voice-toggle--on' : ''}`}
+              aria-pressed={voiceOut.enabled}
+              onClick={() => {
+                voiceOut.setEnabled(!voiceOut.enabled);
+              }}
+              title={voiceOut.enabled ? 'Spoken replies on' : 'Spoken replies off'}
+            >
+              <span aria-hidden="true">{voiceOut.enabled ? '🔊' : '🔈'}</span>
+              <span className="ask-voice-toggle__label">
+                {voiceOut.enabled ? 'Voice on' : 'Voice off'}
+              </span>
+            </button>
+          )}
+          {collapsible && (
+            <button
+              type="button"
+              className="button button--subtle ask-panel__collapse focus-ring"
+              onClick={collapse}
+              title={turns.length > 0 ? 'Close this conversation' : 'Collapse'}
+            >
+              Collapse
+            </button>
+          )}
+        </div>
       </div>
       <div className="module__body">
         {/* A dedicated, atomic status region announces meaningful transitions once per turn
@@ -108,54 +194,149 @@ export function AskPanel({
         <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
           {announcement}
         </p>
-        <div className="ask-panel__log">
-          {turns.length === 0 && (
-            <AskHero
-              crossCustomer={crossCustomer}
-              onPick={(question) => {
-                setDraft(question);
-                ask(question);
-              }}
-            />
-          )}
-          {turns.map((turn) => (
-            <TurnView key={turn.id} turn={turn} onReask={() => setDraft(turn.question)} />
-          ))}
-        </div>
 
-        <form className="ask-panel__composer" onSubmit={submit}>
-          <label htmlFor="ask-input" className="ask-panel__label">
-            Your question
-          </label>
-          <div className="ask-panel__row">
-            <input
-              id="ask-input"
-              type="text"
-              className="ask-panel__input"
-              value={draft}
-              onChange={(event) => {
-                setDraft(event.target.value);
-              }}
-              placeholder={
-                crossCustomer
-                  ? 'e.g. What are the top risks for Jane Doe?'
-                  : 'e.g. Is this customer eligible for a premium credit card?'
-              }
-              disabled={busy}
-              autoComplete="off"
-            />
-            <button
-              type="submit"
-              className="button button--primary"
-              disabled={busy || draft.trim() === ''}
-            >
-              {busy ? 'Asking…' : 'Ask'}
-            </button>
+        {/* Two columns: a portrait rail on the left (like a chat contact), the conversation on the
+            right. The rail is only shown when the browser supports speech — it is the voice
+            assistant's face — and it collapses under the chat on a narrow panel via CSS. */}
+        <div className={`ask-layout${voiceOut.supported ? '' : ' ask-layout--no-rail'}`}>
+          {voiceOut.supported && (
+            <aside className="ask-rail">
+              <AssistantAvatar state={avatarState} mouth={voiceOut.mouth} size={148} />
+              <p className="ask-rail__name">
+                Ava <span className="ask-rail__role">· AI assistant</span>
+              </p>
+              <p className={`ask-rail__status ask-rail__status--${avatarState}`}>
+                <span className="ask-rail__status-dot" aria-hidden="true" />
+                {railStatus(avatarState)}
+              </p>
+              {voiceIn.supported && (
+                <button
+                  type="button"
+                  className={`ask-rail__speak focus-ring${
+                    voiceIn.state === 'listening' ? ' ask-rail__speak--live' : ''
+                  }`}
+                  aria-pressed={voiceIn.state === 'listening'}
+                  aria-label={
+                    voiceIn.state === 'listening' ? 'Stop dictating' : 'Speak your question'
+                  }
+                  onClick={() => {
+                    if (voiceIn.state === 'listening') {
+                      voiceIn.stop();
+                    } else {
+                      startDictation();
+                    }
+                  }}
+                >
+                  <span aria-hidden="true">🎙</span>
+                  {voiceIn.state === 'listening' ? 'Listening…' : 'Speak'}
+                </button>
+              )}
+            </aside>
+          )}
+
+          <div className="ask-chat">
+            <div className="ask-panel__log" ref={logRef}>
+              {turns.length === 0 && (
+                <AskHero
+                  crossCustomer={crossCustomer}
+                  onPick={(question) => {
+                    ask(question);
+                    setDraft('');
+                  }}
+                />
+              )}
+              {turns.map((turn) => (
+                <TurnView key={turn.id} turn={turn} onReask={() => setDraft(turn.question)} />
+              ))}
+            </div>
+
+            <form className="ask-panel__composer" onSubmit={submit}>
+              <label htmlFor="ask-input" className="ask-panel__label">
+                Your question
+              </label>
+              <div className="ask-panel__row">
+                <input
+                  id="ask-input"
+                  type="text"
+                  className="ask-panel__input"
+                  value={draft}
+                  onChange={(event) => {
+                    setDraft(event.target.value);
+                  }}
+                  placeholder={
+                    voiceIn.state === 'listening'
+                      ? 'Listening…'
+                      : crossCustomer
+                        ? 'e.g. What are the top risks for Jane Doe?'
+                        : 'e.g. Is this customer eligible for a premium credit card?'
+                  }
+                  disabled={busy}
+                  autoComplete="off"
+                />
+                {voiceIn.supported && (
+                  <button
+                    type="button"
+                    className={`ask-mic focus-ring${voiceIn.state === 'listening' ? ' ask-mic--live' : ''}`}
+                    aria-pressed={voiceIn.state === 'listening'}
+                    aria-label={voiceIn.state === 'listening' ? 'Stop dictating' : 'Ask by voice'}
+                    disabled={busy}
+                    onClick={() => {
+                      if (voiceIn.state === 'listening') {
+                        voiceIn.stop();
+                      } else {
+                        startDictation();
+                      }
+                    }}
+                  >
+                    <span aria-hidden="true">🎤</span>
+                  </button>
+                )}
+                <button
+                  type="submit"
+                  className="button button--primary"
+                  disabled={busy || draft.trim() === ''}
+                >
+                  {busy ? 'Asking…' : 'Ask'}
+                </button>
+              </div>
+
+              {voiceIn.state === 'listening' && (
+                <p className="ask-voice-hint" role="status">
+                  <span className="ask-voice-hint__dot" aria-hidden="true" /> Listening — speak your
+                  question, then pause.
+                </p>
+              )}
+              {voiceIn.error !== null && (
+                <p className="ask-voice-error" role="alert">
+                  {voiceIn.error}
+                </p>
+              )}
+              {/* Stated once, where the mic lives: browser dictation is not on-device. */}
+              {voiceIn.supported && voiceIn.state !== 'listening' && voiceIn.error === null && (
+                <p className="ask-voice-note">
+                  Voice input is transcribed by your browser, which may send audio to its provider.
+                </p>
+              )}
+            </form>
           </div>
-        </form>
+        </div>
       </div>
     </section>
   );
+}
+
+/** The one-word live status under the assistant's name in the rail, like a chat contact. */
+function railStatus(state: AvatarState): string {
+  switch (state) {
+    case 'listening':
+      return 'Listening…';
+    case 'thinking':
+      return 'Thinking…';
+    case 'speaking':
+      return 'Speaking…';
+    default:
+      return 'Online';
+  }
 }
 
 /** Starter prompts shown as clickable chips in the hero, per surface. */
@@ -319,6 +500,23 @@ function TurnView({
   );
 }
 
+/**
+ * Render answer text with the light markdown a model emits — `**bold**` becomes real bold rather
+ * than showing literal asterisks. Line breaks are preserved by the `white-space: pre-wrap` on
+ * `.qa-turn__text`, so only inline emphasis needs handling here. Done by splitting on the `**`
+ * delimiter (no HTML injection): even-index segments are plain text, odd-index segments are bold.
+ */
+function FormattedAnswer({ text }: { readonly text: string }): React.JSX.Element {
+  const parts = text.split(/\*\*/);
+  return (
+    <>
+      {parts.map((part, index) =>
+        index % 2 === 1 ? <strong key={index}>{part}</strong> : <span key={index}>{part}</span>,
+      )}
+    </>
+  );
+}
+
 function TurnBody({ turn }: { readonly turn: Turn }): React.JSX.Element {
   const streaming = turn.status === 'streaming';
 
@@ -341,7 +539,7 @@ function TurnBody({ turn }: { readonly turn: Turn }): React.JSX.Element {
   return (
     <>
       <p className="qa-turn__text">
-        {turn.answer}
+        <FormattedAnswer text={turn.answer} />
         {streaming && <span className="ai-cursor" aria-hidden="true" />}
       </p>
 
