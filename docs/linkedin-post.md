@@ -36,6 +36,21 @@ What would *you* want an AI copilot to do for you at work? 👇
 
 ---
 
+## Suggested visuals
+
+These are the diagrams to pair with the post. They render inline here on GitHub; for LinkedIn,
+turn them into a GIF/MP4 (see the note under Posting tips).
+
+**Architecture — a request flows down the stack, guaranteed at every hop:**
+
+![Architecture diagram](animation/architecture.svg)
+
+**Ask AI — grounded, or it doesn't ship:**
+
+![Ask AI grounding flow](animation/ask-ai-flow.svg)
+
+---
+
 ## Posting tips
 
 - Lead with the hook — the first ~2 lines show before LinkedIn's "…more" cut, so they decide reach.
